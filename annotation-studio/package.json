@@ -16,7 +16,8 @@
     "migrate": "node --experimental-strip-types --no-warnings scripts/migrate.ts",
     "bootstrap": "node --experimental-strip-types --no-warnings scripts/bootstrap.ts",
     "prune": "node --experimental-strip-types --no-warnings scripts/prune.ts",
-    "setup:local": "npm run build && npm run migrate && npm run bootstrap"
+    "setup:local": "npm run build && npm run migrate && npm run bootstrap",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
