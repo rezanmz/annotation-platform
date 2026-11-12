@@ -11,8 +11,6 @@ import { build } from 'esbuild';
 const work = await mkdtemp(join(tmpdir(), 'annotation-auth-'));
 await build({ entryPoints: [new URL('../lib/server/auth.ts', import.meta.url).pathname], outfile: join(work, 'auth.mjs'), bundle: true, platform: 'node', format: 'esm' });
 const { AuthService, hashPassword, validatePassword, readSessionToken, sessionCookie, clearSessionCookie, authResponse, assertExpectedActor } = await import(pathToFileURL(join(work, 'auth.mjs')).href);
-await build({ entryPoints: [new URL('../app/api/auth/change-password/route.ts', import.meta.url).pathname], outfile: join(work, 'change-password-route.mjs'), bundle: true, platform: 'node', format: 'esm' });
-const { POST: changePasswordEndpoint } = await import(pathToFileURL(join(work, 'change-password-route.mjs')).href);
 const migrations = (await readdir(new URL('../drizzle', import.meta.url))).filter((name) => name.endsWith('.sql')).sort();
 const migrationSQL = await Promise.all(migrations.map((name) => readFile(new URL(`../drizzle/${name}`, import.meta.url), 'utf8')));
 const password = 'Initial account password 2026!';
@@ -156,24 +154,22 @@ test('cookies are host-scoped HttpOnly SameSite and HTTPS cookies add Secure; am
   } finally { db.close(); }
 });
 
-test('self-service password changes are forbidden for both annotators and administrators', async () => {
+test('self-service password change requires the current password, rotates sessions, and audits the change', async () => {
   const { db, auth } = fixture();
   try {
-    const before = db.sqlite.prepare('SELECT id, password_hash FROM local_accounts ORDER BY id').all();
-    for (const email of ['alice@example.test', 'admin@example.test']) {
-      const session = await signIn(auth, email);
-      const response = await changePasswordEndpoint(new Request('http://localhost/api/auth/change-password', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: `annotation_session=${session.token}` },
-        body: JSON.stringify({ currentPassword: password, newPassword: changedPassword }),
-      }));
-      assert.equal(response.status, 403);
-      assert.equal((await response.json()).code, 'PASSWORD_CHANGE_DISABLED');
-      assert.equal(response.headers.get('set-cookie'), null);
-      assert.ok(await auth.actor(session.token));
-      await assert.rejects(signIn(auth, email, changedPassword), status(401));
-      assert.equal((await signIn(auth, email, password)).actor.email, email);
-    }
-    assert.deepEqual(db.sqlite.prepare('SELECT id, password_hash FROM local_accounts ORDER BY id').all(), before);
+    const first = await signIn(auth);
+    const second = await signIn(auth);
+    await assert.rejects(auth.changePassword('alice', 'not the current password', changedPassword), status(401));
+    assert.ok(await auth.actor(first.token));
+    const changed = await auth.changePassword('alice', password, changedPassword);
+    assert.equal(changed.actor.id, 'alice');
+    assert.equal(await auth.actor(first.token), null);
+    assert.equal(await auth.actor(second.token), null);
+    assert.ok(await auth.actor(changed.token));
+    await assert.rejects(signIn(auth, 'alice@example.test', password), status(401));
+    assert.equal((await signIn(auth, 'alice@example.test', changedPassword)).actor.id, 'alice');
+    assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM audit_log WHERE action = 'password.change'").get().n, 1);
+    await assert.rejects(auth.changePassword('alice', changedPassword, 'short'), /between 12 and 128/);
   } finally { db.close(); }
 });
 

@@ -1,5 +1,5 @@
-import { redirect } from 'next/navigation';
+import PasswordForm from '@/components/auth/password-form';
 
 export default function AccountPasswordPage() {
-  redirect('/login');
+  return <PasswordForm />;
 }

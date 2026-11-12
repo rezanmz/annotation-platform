@@ -1,9 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
 import { ApiError, object, string, validId } from "./validation";
 import { hashPassword, verifyPassword, PasswordValidationError } from "./password";
+import type { Database, SqlStatement } from "./db";
+import { recordAudit } from "./audit";
 export { hashPassword, validatePassword } from "./password";
 
-export type AuthDatabase = Pick<D1Database, "prepare" | "batch">;
+export type AuthDatabase = Pick<Database, "prepare" | "batch">;
 export type LocalRole = "admin" | "annotator";
 export type AuthActor = { id: string; name: string; email: string; isAdmin: boolean; mustChangePassword: boolean };
 type AccountRow = { id: string; email: string; name: string; password_hash: string; role: LocalRole; active: number; must_change_password: number; created_at: string; updated_at: string };
@@ -12,8 +14,9 @@ export type AuthResult = { actor: AuthActor; token: string; expiresAt: string };
 export const SESSION_COOKIE = "annotation_session";
 export const SESSION_LIFETIME_SECONDS = 12 * 60 * 60;
 const RATE_WINDOW_MS = 15 * 60 * 1000;
-const LOGIN_LIMIT = 8;
-const CLIENT_LIMIT = 60;
+const EMAIL_LIMIT = 8;
+const CLIENT_LIMIT = 30;
+const PASSWORD_CHANGE_LIMIT = 5;
 
 export class AuthError extends ApiError {
   constructor(status: number, message: string, public code?: string, public retryAfter?: number) { super(status, message); }
@@ -90,14 +93,15 @@ export class AuthService {
     }
     return hash;
   }
-  async login(body: unknown, clientKey = "local-browser"): Promise<AuthResult> {
+  async login(body: unknown, clientKey = "unknown"): Promise<AuthResult> {
+    await this.pruneExpired();
     const input = object(body);
     let email: string;
     try { email = normalizeEmail(input.email); } catch { email = "invalid-email"; }
     // Reserve attempts before hashing, so concurrent requests cannot bypass the
     // durable account limit. The local listener also has a shared client limit.
     await this.consumeRate(`login-client:${clientKey}`, CLIENT_LIMIT);
-    const accountLimit = await this.consumeRate(`login-email:${email}`, LOGIN_LIMIT);
+    const accountLimit = await this.consumeRate(`login-email:${email}`, EMAIL_LIMIT);
     const account = await this.db.prepare("SELECT * FROM local_accounts WHERE email = ?").bind(email).first<AccountRow>();
     const matches = await verifyPassword(input.password, account?.password_hash ?? null);
     if (!matches || !account || account.active !== 1 || !["admin", "annotator"].includes(account.role)) invalidCredentials();
@@ -114,11 +118,41 @@ export class AuthService {
     if (!confirmed) invalidCredentials();
     return { actor: safeActor(confirmed), token, expiresAt };
   }
+  private lastPrune = 0;
+  private async pruneExpired(): Promise<void> {
+    const now = this.now();
+    if (now - this.lastPrune < 60 * 60 * 1000) return;
+    this.lastPrune = now;
+    await this.db.prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").bind(this.timestamp()).run();
+    await this.db.prepare("DELETE FROM auth_rate_limits WHERE window_started_at < ?").bind(now - 24 * 60 * 60 * 1000).run();
+  }
+  async changePassword(userId: string, currentPassword: unknown, nextPassword: unknown): Promise<AuthResult> {
+    const account = await this.db.prepare("SELECT * FROM local_accounts WHERE id = ?").bind(userId).first<AccountRow>();
+    if (!account || account.active !== 1) throw new AuthError(401, "Sign in again to change your password.", "INVALID_SESSION");
+    await this.consumeRate(`password-change:${userId}`, PASSWORD_CHANGE_LIMIT);
+    if (!(await verifyPassword(currentPassword, account.password_hash))) throw new AuthError(401, "The current password is incorrect.", "INVALID_CREDENTIALS");
+    const passwordHash = await checkedHash(nextPassword);
+    const token = randomBytes(32).toString("base64url");
+    const now = this.timestamp();
+    const expiresAt = new Date(this.now() + SESSION_LIFETIME_SECONDS * 1000).toISOString();
+    const results = await this.db.batch([
+      this.db.prepare("UPDATE local_accounts SET password_hash = ?, updated_at = ? WHERE id = ? AND password_hash = ?").bind(passwordHash, now, userId, account.password_hash),
+      this.db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(userId),
+      this.db.prepare("DELETE FROM auth_rate_limits WHERE scope_hash = ?").bind(digest(`password-change:${userId}`)),
+    ]);
+    if (!results[0].meta.changes) throw new AuthError(409, "The password changed in another session. Sign in again.", "PASSWORD_CHANGED");
+    const inserted = await this.db.prepare("INSERT INTO auth_sessions (token_hash, user_id, created_at, expires_at) SELECT ?, id, ?, ? FROM local_accounts WHERE id = ? AND password_hash = ? AND active = 1").bind(digest(token), now, expiresAt, userId, passwordHash).run();
+    if (!inserted.meta.changes) throw new AuthError(409, "Could not start a new session. Sign in again.", "SESSION_CREATION_FAILED");
+    await recordAudit(this.db, userId, "password.change", userId, {});
+    const confirmed = await this.sessionAccount(token);
+    if (!confirmed) throw new AuthError(503, "The password changed but the session is unavailable. Sign in again.");
+    return { actor: safeActor(confirmed), token, expiresAt };
+  }
   async logout(token: string | null): Promise<void> {
     const hash = tokenHash(token);
     if (hash) await this.db.prepare("DELETE FROM auth_sessions WHERE token_hash = ?").bind(hash).run();
   }
-  async createAccount(input: { id?: string; name: unknown; email: unknown; password: unknown; role: LocalRole }, extraStatements: D1PreparedStatement[] = []): Promise<PublicAccount> {
+  async createAccount(input: { id?: string; name: unknown; email: unknown; password: unknown; role: LocalRole }, extraStatements: SqlStatement[] = []): Promise<PublicAccount> {
     const id = input.id === undefined ? crypto.randomUUID() : validId(input.id, "Account ID");
     const email = normalizeEmail(input.email);
     const name = string(input.name, "Name", 120);

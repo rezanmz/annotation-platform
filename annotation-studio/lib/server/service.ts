@@ -1,10 +1,13 @@
+import { randomBytes } from "node:crypto";
 import questions from "./questionnaire.json";
-import defaultAnswerKeys from "./default-answer-keys.json";
+import { qualificationKeys } from "./keys";
+import type { Database, RunResult } from "./db";
+import { recordAudit } from "./audit";
+import { hashPassword } from "./password";
 import { ApiError, object, string, validId, validateAnswers, validateSubmission, type Domain } from "./validation";
 import { AuthService, normalizeEmail } from "./auth";
 
 export type Actor = { id: string; name: string; email: string; isAdmin: boolean };
-type Database = Pick<D1Database, "prepare" | "batch">;
 type Project = { id: string; name: string; domain: Domain; description: string };
 type KeyRow = { domain: Domain; version: string; answers: string; confirmed_at: string };
 type QualificationRow = { version: string; passed_at: string };
@@ -22,13 +25,16 @@ export function projectById(id: string): Project {
   return project;
 }
 function receipt(row: SubmissionRow) { return { id: row.id, savedAt: row.saved_at, requestId: row.request_id }; }
-function changed(result: D1Result) { return result.meta.changes > 0; }
+function changed(result: RunResult) { return result.meta.changes > 0; }
 function requireAdmin(actor: Actor) { if (!actor.isAdmin) throw new ApiError(403, "Administrator access is required."); }
 // Recheck the one-project invariant inside writes, including legacy databases
 // whose inconsistent membership records have not yet been repaired.
 const membershipGuard = "EXISTS (SELECT 1 FROM memberships m WHERE m.project_id = ? AND m.user_id = ? AND (SELECT count(*) FROM memberships all_members WHERE all_members.user_id = m.user_id OR lower(all_members.email) = lower(m.email)) = 1)";
 export class AnnotationService {
   constructor(private db: Database, private actor: Actor) {}
+  private async audit(action: string, target: string, metadata: Record<string, unknown> = {}): Promise<void> {
+    await recordAudit(this.db, this.actor.id, action, target, metadata);
+  }
   private async assignedMembership() {
     const rows = (await this.db.prepare("SELECT project_id, email, user_id FROM memberships WHERE user_id = ? OR lower(email) = ?").bind(this.actor.id, this.actor.email.toLowerCase()).all<MembershipRow>()).results;
     if (rows.length > 1) throw new ApiError(409, "Multiple project assignments were found for this account. Ask an administrator to keep only one assignment before continuing.");
@@ -165,9 +171,10 @@ export class AnnotationService {
       const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS total, (SELECT count(*) FROM memberships WHERE project_id = ?) AS members").bind(project.id, project.id).first();
       return { ...project, ...counts };
     }));
+    const defaults = qualificationKeys();
     const answerKeys = await Promise.all((["legal", "chemistry"] as const).map(async (domain) => {
       const key = await this.key(domain);
-      return { domain, version: key?.version ?? defaultAnswerKeys.version, confirmed: !!key, answers: key ? JSON.parse(key.answers) : null, proposedAnswers: defaultAnswerKeys.answers[domain], confirmedAt: key?.confirmed_at ?? null };
+      return { domain, version: key?.version ?? defaults?.version ?? "unconfirmed", confirmed: !!key, answers: key ? JSON.parse(key.answers) : null, proposedAnswers: defaults?.answers[domain] ?? null, confirmedAt: key?.confirmed_at ?? null };
     }));
     return { memberships, projects, answerKeys, questions, accounts };
   }
@@ -176,6 +183,8 @@ export class AnnotationService {
     const input = object(body);
     switch (input.action) {
       case "createAnnotator": return this.createAnnotator(input);
+      case "createAdmin": return this.createAdmin(input);
+      case "eraseAnnotator": return this.eraseAnnotator(input);
       case "addMember": {
         const project = projectById(string(input.projectId, "Project", 100));
         const account = await this.annotatorAccount(input.email);
@@ -186,6 +195,7 @@ export class AnnotationService {
         try {
           const result = await this.db.prepare("INSERT INTO memberships (project_id, email, user_id, created_at) SELECT ?, ?, id, ? FROM local_accounts WHERE id = ? AND role = 'annotator' AND active = 1").bind(project.id, account.email, new Date().toISOString(), account.id).run();
           if (!changed(result)) throw new ApiError(409, "The annotator account changed before assignment. Refresh the account list and try again.");
+          await this.audit("membership.add", `${project.id}:${account.email}`);
         } catch (error) {
           if (String(error).includes("UNIQUE constraint")) throw new ApiError(409, "This annotator was assigned by another request. Refresh the account list; each annotator can have only one project.");
           throw error;
@@ -196,11 +206,13 @@ export class AnnotationService {
         const project = projectById(string(input.projectId, "Project", 100));
         const email = string(input.email, "Email", 254).toLowerCase();
         await this.db.prepare("DELETE FROM memberships WHERE project_id = ? AND email = ?").bind(project.id, email).run();
+        await this.audit("membership.remove", `${project.id}:${email}`);
         return { ok: true };
       }
       case "resetAnnotatorPassword": {
         const account = await this.annotatorAccount(input.email);
         await new AuthService(this.db).resetPassword(account.id, input.password);
+        await this.audit("password.reset", account.id, { email: account.email });
         return { ok: true };
       }
       case "setAnnotatorActive": {
@@ -213,6 +225,33 @@ export class AnnotationService {
       case "importDocuments": return this.importDocuments(input);
       default: throw new ApiError(400, "Unknown administrator action.");
     }
+  }
+  private async createAdmin(input: Record<string, unknown>) {
+    const email = normalizeEmail(input.email);
+    const name = string(input.name, "Administrator name", 120);
+    const account = await new AuthService(this.db).createAccount({ name, email, password: input.password, role: "admin" });
+    await this.audit("admin.create", account.id, { email: account.email });
+    return { ok: true, account };
+  }
+  private async eraseAnnotator(input: Record<string, unknown>) {
+    const account = await this.annotatorAccount(input.email);
+    const now = new Date().toISOString();
+    const scrub = await hashPassword(randomBytes(32).toString("base64url"));
+    await this.db.batch([
+      this.db.prepare("UPDATE local_accounts SET email = ?, name = ?, password_hash = ?, active = 0, updated_at = ? WHERE id = ?").bind(`deleted+${account.id}@invalid.local`, "Deleted annotator", scrub, now, account.id),
+      this.db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(account.id),
+      this.db.prepare("DELETE FROM memberships WHERE user_id = ? OR lower(email) = ?").bind(account.id, account.email),
+    ]);
+    await this.audit("account.erase", account.id, { email: account.email });
+    return { ok: true };
+  }
+  async auditTrail(limit = 100, before?: string) {
+    requireAdmin(this.actor);
+    const size = Math.min(Math.max(Number.isFinite(limit) ? Math.trunc(limit) : 100, 1), 500);
+    const rows = await this.db.prepare("SELECT id, actor_id AS actorId, action, target, metadata, created_at AS createdAt FROM audit_log WHERE (? IS NULL OR created_at < ?) ORDER BY created_at DESC, id DESC LIMIT ?")
+      .bind(before ?? null, before ?? null, size)
+      .all<{ id: string; actorId: string; action: string; target: string; metadata: string; createdAt: string }>();
+    return { entries: rows.results.map(({ metadata, ...entry }) => ({ ...entry, metadata: JSON.parse(metadata) })) };
   }
   private async annotatorAccount(value: unknown) {
     const email = normalizeEmail(value);
@@ -229,6 +268,7 @@ export class AnnotationService {
     const membership = this.db.prepare("INSERT INTO memberships (project_id, email, user_id, created_at) VALUES (?, ?, ?, ?)").bind(project.id, email, id, new Date().toISOString());
     try {
       const account = await new AuthService(this.db).createAccount({ id, name, email, password: input.password, role: "annotator" }, [membership]);
+      await this.audit("account.create", account.id, { email: account.email, projectId: project.id });
       return { ok: true, account, projectId: project.id };
     } catch (error) {
       if (String(error).includes("UNIQUE constraint")) throw new ApiError(409, "An account or project assignment already exists for this email. Use the existing account controls; no new account was created.");
@@ -258,6 +298,7 @@ export class AnnotationService {
       if (String(error).includes("UNIQUE constraint")) throw new ApiError(409, "This version was confirmed by another request. Refresh and review the current answer key.");
       throw error;
     }
+    await this.audit("answerKey.confirm", `${domain}:${version}`);
     return { ok: true, version };
   }
   private async importDocuments(input: Record<string, unknown>) {
@@ -284,6 +325,7 @@ export class AnnotationService {
       if (String(error).includes("UNIQUE constraint")) throw new ApiError(409, "At least one document ID or document content already exists. No documents were imported.");
       throw error;
     }
+    await this.audit("documents.import", project.id, { imported: statements.length });
     return { ok: true, imported: statements.length };
   }
   async export(projectId: string) {

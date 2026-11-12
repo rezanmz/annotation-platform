@@ -28,9 +28,9 @@
       ]
     },
     "types": [
-      "node",
-      "@cloudflare/workers-types"
-    ]
+      "node"
+    ],
+    "allowImportingTsExtensions": true
   },
   "include": [
     "next-env.d.ts",

@@ -115,7 +115,7 @@ test('qualification gates all document metadata and contents and requires 10/10'
     assert.equal(JSON.stringify(before).includes('proposedAnswers'), false);
     await assert.rejects(alice.document('eurlex', 'doc-1'), expectStatus(403));
     await assert.rejects(alice.submit('eurlex', 'doc-1', input()), expectStatus(403));
-    assert.deepEqual(await alice.qualify('eurlex', { answers: { ...answers, '1': 'A' } }), { passed: false, correct: 9, total: 10 });
+    assert.deepEqual(await alice.qualify('eurlex', { answers: { ...answers, '1': 'B' } }), { passed: false, correct: 9, total: 10 });
     await assert.rejects(alice.document('eurlex', 'doc-1'), expectStatus(403));
     assert.equal((await alice.qualify('eurlex', { answers })).passed, true);
     assert.equal((await alice.document('eurlex', 'doc-1')).source, document().source);
@@ -290,7 +290,7 @@ test('concurrent administrators cannot give the same answer-key version conflict
   const { db, admin } = await setup();
   try {
     const otherAdmin = new AnnotationService(db, { ...actors.admin, id: 'second-admin' });
-    const alternate = [...keys]; alternate[0] = 'A';
+    const alternate = [...keys]; alternate[0] = 'B';
     const outcomes = await Promise.allSettled([
       admin.adminAction({ action: 'confirmKey', domain: 'legal', answers: keys, version: 'v2' }),
       otherAdmin.adminAction({ action: 'confirmKey', domain: 'legal', answers: alternate, version: 'v2' }),

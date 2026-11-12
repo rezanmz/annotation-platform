@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 export const localAccounts = sqliteTable("local_accounts", {
   id: text("id").primaryKey(), email: text("email").notNull(), name: text("name").notNull(), passwordHash: text("password_hash").notNull(),
@@ -9,10 +9,14 @@ export const localAccounts = sqliteTable("local_accounts", {
 }, (t) => [uniqueIndex("local_account_email").on(t.email)]);
 export const authSessions = sqliteTable("auth_sessions", {
   tokenHash: text("token_hash").primaryKey(), userId: text("user_id").notNull().references(() => localAccounts.id, { onDelete: "cascade" }), createdAt: text("created_at").notNull(), expiresAt: text("expires_at").notNull(),
-});
+}, (t) => [index("auth_sessions_expires_at").on(t.expiresAt)]);
 export const authRateLimits = sqliteTable("auth_rate_limits", {
   scopeHash: text("scope_hash").primaryKey(), attempts: integer("attempts").notNull(), windowStartedAt: integer("window_started_at").notNull(),
-});
+}, (t) => [index("auth_rate_limits_window").on(t.windowStartedAt)]);
+
+export const auditLog = sqliteTable("audit_log", {
+  id: text("id").primaryKey(), actorId: text("actor_id").notNull(), action: text("action").notNull(), target: text("target").notNull(), metadata: text("metadata").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [index("audit_log_created_at").on(t.createdAt)]);
 
 export const memberships = sqliteTable("memberships", {
   projectId: text("project_id").notNull(), email: text("email").notNull(), userId: text("user_id"), createdAt: text("created_at").notNull(),

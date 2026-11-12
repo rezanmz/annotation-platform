@@ -342,7 +342,7 @@ export default function AnnotationApp() {
           <div className="privacy-note"><ShieldCheck size={21} /><strong>Your independent review</strong><p>Your ratings are private. Other annotators cannot see your work.</p></div>
           <button className={`nav-item ${(view === 'guidelines' || view === 'qualification') ? 'active' : ''}`} disabled={!project} onClick={() => navigate('guidelines')}><BookOpen size={18} />Guidelines & qualification</button>
           {session?.isAdmin && !demo && <a className="nav-item" href="/admin"><SlidersHorizontal size={18} />Administration</a>}
-          <div className="profile"><span className="profile-avatar">{user?.name?.slice(0, 2).toUpperCase() || 'AS'}</span><div><strong>{user?.name || 'Welcome'}</strong><small>{demo ? 'Demo annotator' : user ? session?.isAdmin ? 'Administrator' : 'Annotator' : 'Sign in to annotate'}</small></div>{user && !demo && <SignOutButton authMode={session?.authMode} onBeforeSignOut={canLeave} onSignedOut={clearSignedOutView} />}</div>
+          <div className="profile"><span className="profile-avatar">{user?.name?.slice(0, 2).toUpperCase() || 'AS'}</span><div><strong>{user?.name || 'Welcome'}</strong><small>{demo ? 'Demo annotator' : user ? session?.isAdmin ? 'Administrator' : 'Annotator' : 'Sign in to annotate'}</small></div>{user && !demo && <><a className="profile-password" href="/account/password">Password</a><SignOutButton authMode={session?.authMode} onBeforeSignOut={canLeave} onSignedOut={clearSignedOutView} /></>}</div>
         </div>
       </aside>
       <div className="main-shell">

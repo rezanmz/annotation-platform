@@ -46,3 +46,8 @@ yarn-error.log*
 
 # Commit the nonsecret environment example.
 !.env.example
+
+# Self-hosted runtime data (never commit)
+/.data/
+/guidelines/
+!/guidelines/.gitkeep

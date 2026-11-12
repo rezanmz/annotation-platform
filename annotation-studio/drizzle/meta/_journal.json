@@ -36,6 +36,13 @@
       "when": 1794336173081,
       "tag": "0004_administrator_managed_passwords",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1794524671807,
+      "tag": "0005_huge_butterfly",
+      "breakpoints": true
     }
   ]
 }
