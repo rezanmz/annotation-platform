@@ -1,0 +1,49 @@
+name: backup
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download snapshot
+        env:
+          BACKUP_URL: ${{ secrets.BACKUP_URL }}
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p backup
+          curl -fsS --retry 3 -H "Authorization: Bearer $BACKUP_TOKEN" "$BACKUP_URL" -o backup/app.db
+          test -s backup/app.db
+          head -c 16 backup/app.db | grep -q "SQLite format 3"
+
+      - name: Verify snapshot
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y sqlite3 >/dev/null
+          test "$(sqlite3 backup/app.db 'PRAGMA integrity_check;')" = "ok"
+          sqlite3 backup/app.db "SELECT 'accounts=' || count(*) FROM local_accounts; SELECT 'submissions=' || count(*) FROM submissions;" > backup/counts.txt
+
+      - name: Encrypt snapshot
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in backup/app.db -out backup/app.db.enc -pass env:BACKUP_PASSPHRASE
+          sha256sum backup/app.db backup/app.db.enc > backup/SHA256SUMS
+          rm backup/app.db
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: annotation-backup-${{ github.run_id }}
+          path: backup/
+          retention-days: 90
+          if-no-files-found: error

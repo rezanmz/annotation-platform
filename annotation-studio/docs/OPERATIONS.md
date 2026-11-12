@@ -48,8 +48,24 @@ Two independent layers:
    `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, and optionally `LITESTREAM_PATH`.
    The database is replicated every second with 720 h retention. This is the point-in-time layer and
    survives loss of the Railway volume.
-2. **Railway volume backups** (daily/weekly/monthly, Pro plan): enable them in the volume's Backups
-   tab. They cover the whole `/data` volume, including guideline files.
+2. **Encrypted snapshots (active, plan-independent):** `GET /api/admin/backup` takes a consistent
+   `VACUUM INTO` snapshot of the live database and returns the SQLite file. It requires
+   `BACKUP_TOKEN` (48 random bytes, Bearer auth) and never caches. The `backup` GitHub Actions
+   workflow runs daily at 03:17 UTC, verifies `PRAGMA integrity_check`, encrypts with
+   `BACKUP_PASSPHRASE` (AES-256-CBC, PBKDF2 200k), and keeps a 90-day artifact. Secrets live in
+   GitHub (`BACKUP_URL`, `BACKUP_TOKEN`, `BACKUP_PASSPHRASE`) and the passphrase is stored only in
+   the operator's `~/.config/omp-secrets/backup-passphrase.txt`.
+3. **Railway volume backups** (daily/weekly/monthly, Pro plan only): enable them in the volume's
+   Backups tab when the workspace is upgraded. They cover the whole `/data` volume, including
+   guideline files.
+
+Restore from an encrypted snapshot:
+
+1. `gh run download <run-id> -n annotation-backup-<run-id> -D restore`
+2. `openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in restore/app.db.enc -out restore/app.db -pass env:BACKUP_PASSPHRASE`
+3. `sqlite3 restore/app.db 'PRAGMA integrity_check;'` must return `ok`.
+4. Stop the service, replace `/data/app.db` through the Railway volume browser (or `railway ssh`
+   with an account token), start the service, then run `npm run smoke`.
 
 Restore procedure (tested quarterly):
 
