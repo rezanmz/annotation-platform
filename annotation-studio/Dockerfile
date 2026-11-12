@@ -30,6 +30,7 @@ COPY package.json ./
 COPY guidelines ./seed-guidelines
 COPY drizzle ./drizzle
 COPY scripts ./scripts
+COPY lib/server/password.ts ./lib/server/password.ts
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh && useradd --uid 10001 --create-home app && mkdir -p /data && chown -R app:app /data /app
 EXPOSE 3000
