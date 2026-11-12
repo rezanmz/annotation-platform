@@ -76,7 +76,7 @@ export function getDatabase(): Database {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const database = new DatabaseSync(path);
   database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA synchronous = NORMAL");
+  database.exec("PRAGMA synchronous = FULL");
   database.exec("PRAGMA busy_timeout = 5000");
   database.exec("PRAGMA foreign_keys = ON");
   database.exec("PRAGMA wal_autocheckpoint = 1000");

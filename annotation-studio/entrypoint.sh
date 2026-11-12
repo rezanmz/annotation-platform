@@ -18,6 +18,7 @@ fi
 mkdir -p "$(dirname "$DATABASE_PATH")" "$GUIDELINES_DIR"
 node --experimental-strip-types --no-warnings scripts/migrate.ts
 node --experimental-strip-types --no-warnings scripts/bootstrap.ts
+node --experimental-strip-types --no-warnings scripts/prune.ts
 
 if [ -n "${LITESTREAM_BUCKET:-}" ]; then
   cat > /tmp/litestream.yml <<CONFIG
