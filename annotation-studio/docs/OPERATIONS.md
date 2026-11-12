@@ -13,7 +13,15 @@ Production target: a single Node 22 process (`vinext` standalone) on Railway, wi
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_NAME` / `BOOTSTRAP_ADMIN_PASSWORD` | one-time | Creates the first active administrator only when none exists. Remove the password variable after the first boot. |
 | `TRUST_PROXY` | yes | `1` behind Railway's edge so client IPs are read from `X-Forwarded-For`. |
 | `AUDIT_RETENTION_DAYS` | no | Default 365. |
+| `DEMO_ENABLED` | no | Off unless `1`. The public sample workspace serves guideline PDFs and grades a test, so it must use `DEMO_QUALIFICATION_KEYS_JSON`, never the live keys. |
+| `DEMO_QUALIFICATION_KEYS_JSON` | demo only | `{"answers":[…10 A–D…]}` for the sample workspace. |
 | `LITESTREAM_*` | optional | Continuous SQLite replication to an S3-compatible bucket. |
+
+## Access control
+
+`/`, `/admin`, and `/account/password` are server-rendered redirects to `/login` when there is no valid
+session; the workspace chrome is never shown to anonymous visitors. The sample workspace (`?demo=1`)
+is disabled by default and its endpoints return 404 unless `DEMO_ENABLED=1`.
 
 ## Boot sequence
 

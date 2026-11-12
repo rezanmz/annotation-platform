@@ -25,7 +25,9 @@ npm run bootstrap
 npm run dev
 ```
 
-`DATABASE_PATH` defaults to `.data/app.db`. Put the two guideline PDFs at
+`DATABASE_PATH` defaults to `.data/app.db`. Anonymous requests to `/`, `/admin`, and
+`/account/password` redirect to `/login`. The optional sample workspace is off unless
+`DEMO_ENABLED=1`; it must use `DEMO_QUALIFICATION_KEYS_JSON`, never the live key. Put the two guideline PDFs at
 `guidelines/legal.pdf` and `guidelines/chemistry.pdf`; that directory is ignored by Git and copied
 into the private image at build time. Open `/login`.
 
