@@ -79,6 +79,11 @@ Restore procedure (tested quarterly):
 A logical dump is also produced by `sqlite3 app.db .dump` for archival; never restore a JSON project
 export as a database backup.
 
+Verify the automated layer at least monthly: run the `backup` workflow manually, download its artifact,
+decrypt it, and confirm `PRAGMA integrity_check` returns `ok` and the account/submission counts match.
+GitHub disables scheduled workflows after 60 days without repository activity, so a silent gap is
+possible; the Pro volume backups or a Railway bucket + Litestream remove that dependency.
+
 ## Accounts and recovery
 
 - The admin can reset annotator passwords, disable accounts, and erase an annotator (anonymizes the
