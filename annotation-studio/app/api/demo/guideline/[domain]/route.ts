@@ -1,6 +1,7 @@
 import { handle, pdfResponse } from "@/lib/server/http";
 import { readGuideline } from "@/lib/server/guidelines";
 import { ApiError } from "@/lib/server/validation";
+import { demoEnabled } from "@/lib/server/demo";
 
 export const dynamic = "force-dynamic";
 
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 // Private dataset documents and annotations always require project membership.
 export async function GET(_request: Request, context: { params: Promise<{ domain: string }> }) {
   return handle(async () => {
+    if (!demoEnabled()) throw new ApiError(404, "The sample workspace is not enabled.");
     const { domain } = await context.params;
     if (domain !== "legal" && domain !== "chemistry") throw new ApiError(404, "Guideline not found.");
     const bytes = await readGuideline(domain);
