@@ -69,9 +69,9 @@ export default function Onboarding({ project, qualification, mode, demo, questio
     {showGuideline ? <>
       {passed && <div className="notice notice-success"><ShieldCheck size={18} /><span>{demo ? 'You completed this project’s demo qualification in this browser session.' : 'You have already passed this project’s qualification. You do not need to take the test again.'}</span></div>}
       <section className="guideline-reader" aria-label={`${chemistry ? 'Chemistry' : 'Legal'} annotation guideline`}>
-        <div className="guideline-reader-toolbar"><div><FileText size={17} /><strong>{chemistry ? 'Chemistry' : 'Legal'} annotation guidelines</strong><span>4 pages</span></div><a href={pdfUrl} target="_blank" rel="noreferrer">Open in a new tab <ExternalLink size={13} /></a></div>
+        <div className="guideline-reader-toolbar"><div><FileText size={17} /><strong>{chemistry ? 'Chemistry' : 'Legal'} annotation guidelines</strong><span>Read every page</span></div><a href={pdfUrl} target="_blank" rel="noreferrer">Open in a new tab <ExternalLink size={13} /></a></div>
         <iframe className="guideline-pdf" src={`${pdfUrl}#view=FitH`} title={`${chemistry ? 'Chemistry' : 'Legal'} annotation guideline PDF`} />
-        <div className="guideline-reader-fallback"><BookOpen size={16} /><p>If the PDF does not appear or is difficult to read, <a href={pdfUrl} target="_blank" rel="noreferrer">open the full guideline in a new tab</a>. Read all four pages before continuing.</p></div>
+        <div className="guideline-reader-fallback"><BookOpen size={16} /><p>If the PDF does not appear or is difficult to read, <a href={pdfUrl} target="_blank" rel="noreferrer">open the full guideline in a new tab</a>. Read the full guideline before continuing.</p></div>
       </section>
       <div className="guideline-reading-reminders"><strong>As you read, pay attention to:</strong><ul><li>The eight criteria and the difference between scores 4 and 5.</li><li>When to explain a score, use “not applicable,” or choose “cannot assess.”</li><li>{chemistry ? 'The requirement to give a brief reason for every chemistry score.' : 'How to assess each criterion independently and identify needed corrections.'}</li></ul></div>
       <section className="guideline-acknowledgement">

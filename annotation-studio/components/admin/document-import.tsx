@@ -8,6 +8,7 @@ import type { AdminAction, AdminProject } from "./types";
 type PreparedDocument = { id: string; title: string; source: string; question: string; answer: string };
 
 export function DocumentImport({ project, action, refresh }: { project: AdminProject; action: AdminAction; refresh: () => Promise<void> }) {
+  const hasSample = ["eurlex", "un", "chemistry"].includes(project.id);
   const input = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<CsvPreview | null>(null);
   const [prepared, setPrepared] = useState<PreparedDocument[]>([]);
@@ -69,7 +70,7 @@ export function DocumentImport({ project, action, refresh }: { project: AdminPro
       <span className="admin-upload-icon"><ArrowUpFromLine size={24} /></span><h3>Bring your dataset here</h3><p>Drop a CSV file, or choose one from your computer.</p>
       <input ref={input} type="file" accept=".csv,text/csv" className="admin-file-input" id={`csv-${project.id}`} disabled={busy} onChange={(event) => { void loadFile(event.target.files?.[0]); }} />
       <label className={`admin-button admin-primary${busy ? " admin-disabled" : ""}`} htmlFor={`csv-${project.id}`}>Choose CSV file</label>
-      <div className="admin-upload-links"><a href={`/samples/${project.id}.csv`} download><Download size={14} /> Download sample CSV</a><button type="button" className="admin-text-button" disabled={busy} onClick={() => void loadSample()}>Preview sample</button></div>
+      {hasSample && <div className="admin-upload-links"><a href={`/samples/${project.id}.csv`} download><Download size={14} /> Download sample CSV</a><button type="button" className="admin-text-button" disabled={busy} onClick={() => void loadSample()}>Preview sample</button></div>}
     </div>
     {error && <p className="admin-alert admin-error" role="alert"><AlertCircle size={17} />{error}</p>}
     {success && <p className="admin-alert admin-success" role="status"><Check size={17} />{success}</p>}

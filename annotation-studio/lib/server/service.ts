@@ -195,6 +195,8 @@ export class AnnotationService {
       case "createProject": return this.createProject(input);
       case "updateProject": return this.updateProject(input);
       case "deleteProject": return this.deleteProject(input);
+      case "deleteDocument": return this.deleteDocument(input);
+      case "deleteUnsubmittedDocuments": return this.deleteUnsubmittedDocuments(input);
       case "addMember": {
         const project = await projectById(this.db, string(input.projectId, "Project", 100));
         const account = await this.annotatorAccount(input.email);
@@ -262,6 +264,28 @@ export class AnnotationService {
       .bind(before ?? null, before ?? null, size)
       .all<{ id: string; actorId: string; action: string; target: string; metadata: string; createdAt: string }>();
     return { entries: rows.results.map(({ metadata, ...entry }) => ({ ...entry, metadata: JSON.parse(metadata) })) };
+  }
+  async listDocuments(projectId: string) {
+    requireAdmin(this.actor);
+    const project = await projectById(this.db, projectId);
+    const rows = (await this.db.prepare("SELECT d.id, d.title, d.created_at AS createdAt, (SELECT count(*) FROM submissions s WHERE s.project_id = d.project_id AND s.document_id = d.id) AS submitted FROM documents d WHERE d.project_id = ? ORDER BY d.created_at, d.id").bind(project.id).all<{ id: string; title: string; createdAt: string; submitted: number }>()).results;
+    return { project, documents: rows.map((row) => ({ ...row, submitted: Number(row.submitted) })) };
+  }
+  private async deleteDocument(input: Record<string, unknown>) {
+    const project = await projectById(this.db, string(input.projectId, "Project", 100));
+    const documentId = validId(input.documentId, "Document ID");
+    const counts = await this.db.prepare("SELECT (SELECT count(*) FROM submissions WHERE project_id = ? AND document_id = ?) AS submissions").bind(project.id, documentId).first<{ submissions: number }>();
+    if ((counts?.submissions ?? 0) > 0) throw new ApiError(409, "This document has saved submissions and cannot be deleted. Remove the project only after exporting its work.");
+    const result = await this.db.prepare("DELETE FROM documents WHERE project_id = ? AND id = ?").bind(project.id, documentId).run();
+    if (!changed(result)) throw new ApiError(404, "Document not found.");
+    await this.audit("document.delete", `${project.id}:${documentId}`);
+    return { ok: true };
+  }
+  private async deleteUnsubmittedDocuments(input: Record<string, unknown>) {
+    const project = await projectById(this.db, string(input.projectId, "Project", 100));
+    const result = await this.db.prepare("DELETE FROM documents WHERE project_id = ? AND NOT EXISTS (SELECT 1 FROM submissions s WHERE s.project_id = documents.project_id AND s.document_id = documents.id)").bind(project.id).run();
+    await this.audit("documents.deleteUnsubmitted", project.id, { deleted: result.meta.changes });
+    return { ok: true, deleted: result.meta.changes };
   }
   private async createProject(input: Record<string, unknown>) {
     const id = validId(input.id, "Project ID");

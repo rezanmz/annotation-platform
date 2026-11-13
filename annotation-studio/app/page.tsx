@@ -9,6 +9,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
   const params = await searchParams;
   // The sample workspace is intentionally public; everything else requires a session.
   const demo = params.demo === "1" && demoEnabled();
-  if (!demo && !(await actor())) redirect("/login");
+  if (!demo) {
+    const user = await actor();
+    if (!user) redirect("/login");
+    if (user.isAdmin) redirect("/admin");
+  }
   return <AnnotationApp />;
 }
