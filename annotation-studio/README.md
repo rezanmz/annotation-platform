@@ -51,6 +51,8 @@ server (under Litestream when configured). Migrations are idempotent. The health
   `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts, resets
   passwords, disables/reactivates, removes project access, erases an identity (keeping submitted
   work), and creates additional administrators.
+- `/admin` → **Projects** creates, edits, and removes projects (only when empty); each project uses
+  the legal or chemistry guideline domain.
 - `/admin` → **Guidelines** uploads, replaces, downloads, or removes the legal and chemistry
   guideline PDFs (stored in SQLite, so backups include them).
 - `/admin` → **Administrators** creates and manages administrator accounts.

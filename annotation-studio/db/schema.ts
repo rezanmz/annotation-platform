@@ -14,6 +14,10 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
   scopeHash: text("scope_hash").primaryKey(), attempts: integer("attempts").notNull(), windowStartedAt: integer("window_started_at").notNull(),
 }, (t) => [index("auth_rate_limits_window").on(t.windowStartedAt)]);
 
+export const projects = sqliteTable("projects", {
+  id: text("id").primaryKey(), name: text("name").notNull(), domain: text("domain", { enum: ["legal", "chemistry"] }).notNull(), description: text("description").notNull(), createdAt: text("created_at").notNull(),
+});
+
 export const guidelines = sqliteTable("guidelines", {
   domain: text("domain").primaryKey(), bytes: blob("bytes").notNull(), sha256: text("sha256").notNull(), updatedAt: text("updated_at").notNull(),
 });

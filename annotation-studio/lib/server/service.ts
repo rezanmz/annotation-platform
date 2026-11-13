@@ -14,13 +14,11 @@ type QualificationRow = { version: string; passed_at: string };
 type SubmissionRow = { id: string; project_id: string; document_id: string; request_id: string; payload: string; saved_at: string };
 type MembershipRow = { project_id: string; email: string; user_id: string | null };
 type AccountRow = { id: string; name: string; email: string; role: string; active: number; must_change_password: number };
-export const PROJECTS: Project[] = [
-  { id: "eurlex", name: "EUR-Lex", domain: "legal", description: "European Union legal texts" },
-  { id: "un", name: "United Nations", domain: "legal", description: "United Nations legal texts" },
-  { id: "chemistry", name: "Chemistry", domain: "chemistry", description: "Chemistry research and technical texts" },
-];
-export function projectById(id: string): Project {
-  const project = PROJECTS.find((p) => p.id === id);
+export async function listProjects(db: Database): Promise<Project[]> {
+  return (await db.prepare("SELECT id, name, domain, description FROM projects ORDER BY created_at, id").all<Project>()).results;
+}
+export async function projectById(db: Database, id: string): Promise<Project> {
+  const project = await db.prepare("SELECT id, name, domain, description FROM projects WHERE id = ?").bind(id).first<Project>();
   if (!project) throw new ApiError(404, "Project not found.");
   return project;
 }
@@ -47,7 +45,7 @@ export class AnnotationService {
       .bind(this.actor.id, this.actor.email.toLowerCase(), this.actor.id).run();
   }
   async assertMember(projectId: string, adminAllowed = false) {
-    const project = projectById(projectId);
+    const project = await projectById(this.db, projectId);
     if (adminAllowed && this.actor.isAdmin) return project;
     const member = await this.assignedMembership();
     if (!member || member.project_id !== projectId || member.user_id !== this.actor.id) throw new ApiError(404, "Project not found or access has not been assigned.");
@@ -80,7 +78,10 @@ export class AnnotationService {
     if (this.actor.isAdmin) return [];
     await this.claimInvitations();
     const membership = await this.assignedMembership();
-    const projects = PROJECTS.filter((p) => membership?.user_id === this.actor.id && membership.project_id === p.id);
+    const project = membership?.user_id === this.actor.id
+      ? await this.db.prepare("SELECT id, name, domain, description FROM projects WHERE id = ?").bind(membership.project_id).first<Project>()
+      : null;
+    const projects = project ? [project] : [];
     return Promise.all(projects.map(async (project) => {
       const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS total, (SELECT count(*) FROM submissions WHERE project_id = ? AND user_id = ?) AS submitted").bind(project.id, project.id, this.actor.id).first<{ total: number; submitted: number }>();
       const q = await this.qualification(project);
@@ -167,7 +168,8 @@ export class AnnotationService {
     requireAdmin(this.actor);
     const memberships = (await this.db.prepare("SELECT m.project_id AS projectId, m.email, m.user_id AS userId, m.created_at AS createdAt, a.name, a.active, 0 AS mustChangePassword FROM memberships m LEFT JOIN local_accounts a ON a.id = m.user_id ORDER BY m.project_id, m.email").all()).results;
     const accounts = (await this.db.prepare("SELECT a.id, a.name, a.email, a.role, a.active, 0 AS mustChangePassword, CASE WHEN count(m.project_id) = 1 THEN min(m.project_id) ELSE NULL END AS projectId, count(m.project_id) AS assignmentCount FROM local_accounts a LEFT JOIN memberships m ON m.user_id = a.id OR lower(m.email) = lower(a.email) GROUP BY a.id ORDER BY a.name, a.email").all<{ active: number; mustChangePassword: number; [key: string]: unknown }>()).results.map((account) => ({ ...account, active: !!account.active, mustChangePassword: false }));
-    const projects = await Promise.all(PROJECTS.map(async (project) => {
+    const projectRows = await listProjects(this.db);
+    const projects = await Promise.all(projectRows.map(async (project) => {
       const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS total, (SELECT count(*) FROM memberships WHERE project_id = ?) AS members").bind(project.id, project.id).first();
       return { ...project, ...counts };
     }));
@@ -190,8 +192,11 @@ export class AnnotationService {
       case "resetAccountPassword": return this.resetAccountPassword(input);
       case "eraseAccount": return this.eraseAccount(input);
       case "deleteLoadTestDocument": return this.deleteLoadTestDocument(input);
+      case "createProject": return this.createProject(input);
+      case "updateProject": return this.updateProject(input);
+      case "deleteProject": return this.deleteProject(input);
       case "addMember": {
-        const project = projectById(string(input.projectId, "Project", 100));
+        const project = await projectById(this.db, string(input.projectId, "Project", 100));
         const account = await this.annotatorAccount(input.email);
         if (!account.active) throw new ApiError(409, "Reactivate this account before assigning a project.");
         const existing = (await this.db.prepare("SELECT project_id, email, user_id FROM memberships WHERE user_id = ? OR lower(email) = ?").bind(account.id, account.email).all<MembershipRow>()).results;
@@ -208,7 +213,7 @@ export class AnnotationService {
         return { ok: true };
       }
       case "removeMember": {
-        const project = projectById(string(input.projectId, "Project", 100));
+        const project = await projectById(this.db, string(input.projectId, "Project", 100));
         const email = string(input.email, "Email", 254).toLowerCase();
         await this.db.prepare("DELETE FROM memberships WHERE project_id = ? AND email = ?").bind(project.id, email).run();
         await this.audit("membership.remove", `${project.id}:${email}`);
@@ -258,8 +263,43 @@ export class AnnotationService {
       .all<{ id: string; actorId: string; action: string; target: string; metadata: string; createdAt: string }>();
     return { entries: rows.results.map(({ metadata, ...entry }) => ({ ...entry, metadata: JSON.parse(metadata) })) };
   }
+  private async createProject(input: Record<string, unknown>) {
+    const id = validId(input.id, "Project ID");
+    const name = string(input.name, "Project name", 120);
+    const domain = input.domain;
+    if (domain !== "legal" && domain !== "chemistry") throw new ApiError(400, "Choose a valid project domain.");
+    const description = typeof input.description === "string" ? string(input.description, "Description", 500, true) : "";
+    try {
+      await this.db.prepare("INSERT INTO projects (id, name, domain, description, created_at) VALUES (?, ?, ?, ?, ?)").bind(id, name, domain, description, new Date().toISOString()).run();
+    } catch (error) {
+      if (String(error).includes("UNIQUE constraint")) throw new ApiError(409, "A project with this identifier already exists.");
+      throw error;
+    }
+    await this.audit("project.create", id, { domain });
+    return { ok: true, project: { id, name, domain, description } };
+  }
+  private async updateProject(input: Record<string, unknown>) {
+    const id = validId(input.projectId, "Project ID");
+    await projectById(this.db, id);
+    const name = string(input.name, "Project name", 120);
+    const description = typeof input.description === "string" ? string(input.description, "Description", 500, true) : "";
+    await this.db.prepare("UPDATE projects SET name = ?, description = ? WHERE id = ?").bind(name, description, id).run();
+    await this.audit("project.update", id);
+    return { ok: true, project: { id, name, description } };
+  }
+  private async deleteProject(input: Record<string, unknown>) {
+    const id = validId(input.projectId, "Project ID");
+    await projectById(this.db, id);
+    const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS documents, (SELECT count(*) FROM submissions WHERE project_id = ?) AS submissions, (SELECT count(*) FROM memberships WHERE project_id = ?) AS memberships").bind(id, id, id).first<{ documents: number; submissions: number; memberships: number }>();
+    if ((counts?.documents ?? 0) + (counts?.submissions ?? 0) + (counts?.memberships ?? 0) > 0) {
+      throw new ApiError(409, "Remove all documents, submissions, and member assignments before deleting this project.");
+    }
+    await this.db.prepare("DELETE FROM projects WHERE id = ?").bind(id).run();
+    await this.audit("project.delete", id);
+    return { ok: true };
+  }
   private async deleteLoadTestDocument(input: Record<string, unknown>) {
-    const project = projectById(string(input.projectId, "Project", 100));
+    const project = await projectById(this.db, string(input.projectId, "Project", 100));
     const documentId = validId(input.documentId, "Document ID");
     if (!documentId.startsWith("load-")) throw new ApiError(400, "Only load-test documents can be removed through this action.");
     await this.db.batch([
@@ -328,7 +368,7 @@ export class AnnotationService {
     return account;
   }
   private async createAnnotator(input: Record<string, unknown>) {
-    const project = projectById(string(input.projectId, "Project", 100));
+    const project = await projectById(this.db, string(input.projectId, "Project", 100));
     const email = normalizeEmail(input.email);
     const name = string(input.name, "Annotator name", 120);
     const id = crypto.randomUUID();
@@ -369,7 +409,7 @@ export class AnnotationService {
     return { ok: true, version };
   }
   private async importDocuments(input: Record<string, unknown>) {
-    const project = projectById(string(input.projectId, "Project", 100));
+    const project = await projectById(this.db, string(input.projectId, "Project", 100));
     if (!Array.isArray(input.documents) || input.documents.length === 0 || input.documents.length > 500) throw new ApiError(400, "Import between 1 and 500 documents at a time.");
     const ids = new Set<string>(), hashes = new Set<string>();
     const now = new Date().toISOString();
@@ -397,7 +437,7 @@ export class AnnotationService {
   }
   async export(projectId: string) {
     requireAdmin(this.actor);
-    const project = projectById(projectId);
+    const project = await projectById(this.db, projectId);
     const rows = await this.db.prepare("SELECT s.id, s.project_id AS projectId, s.document_id AS documentId, s.user_id AS userId, s.request_id AS requestId, s.qualification_version AS qualificationVersion, (SELECT q.passed_at FROM qualifications q WHERE q.project_id = s.project_id AND q.user_id = s.user_id AND q.version = s.qualification_version ORDER BY q.passed_at LIMIT 1) AS qualificationPassedAt, s.saved_at AS savedAt, s.payload, d.title, d.source, d.question, d.answer FROM submissions s JOIN documents d ON d.project_id = s.project_id AND d.id = s.document_id WHERE s.project_id = ? ORDER BY s.saved_at, s.id").bind(projectId).all<{ payload: string; [key: string]: unknown }>();
     const answerKeys = (await this.db.prepare("SELECT version, answers, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt FROM answer_key_versions WHERE domain = ? ORDER BY confirmed_at").bind(project.domain).all<{ answers: string; [key: string]: unknown }>()).results.map((key) => ({ ...key, answers: JSON.parse(key.answers) }));
     return { project, exportedAt: new Date().toISOString(), answerKeys, annotations: rows.results.map(({ payload, ...row }) => ({ ...row, ...JSON.parse(payload) })) };
