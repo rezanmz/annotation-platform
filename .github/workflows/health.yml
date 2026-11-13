@@ -1,0 +1,17 @@
+name: health
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Health endpoint
+        run: curl -fsS --retry 3 --retry-delay 5 --max-time 20 https://annotation-studio-production.up.railway.app/api/health

@@ -1,0 +1,48 @@
+name: backup-verify
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install sqlite3
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y sqlite3 >/dev/null
+
+      - name: Install Litestream
+        run: |
+          curl -fsSL https://github.com/benbjohnson/litestream/releases/download/v0.5.18/litestream-0.5.18-linux-x86_64.tar.gz -o /tmp/litestream.tar.gz
+          echo "d3687b9fd0f2e9426bbd3da828429ff3f1dfc5c9b74d54fdf028e4ee510e7dea  /tmp/litestream.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/litestream.tar.gz -C /tmp litestream
+
+      - name: Restore latest snapshot
+        env:
+          LITESTREAM_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          LITESTREAM_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
+          B2_BUCKET: ${{ secrets.B2_BUCKET }}
+          B2_REGION: ${{ secrets.B2_REGION }}
+          B2_ENDPOINT: ${{ secrets.B2_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          cat > /tmp/litestream.yml <<CONFIG
+          dbs:
+            - path: /tmp/source.db
+              replica:
+                type: s3
+                url: s3://${B2_BUCKET}/annotation-studio
+                region: ${B2_REGION}
+                endpoint: ${B2_ENDPOINT}
+                force-path-style: true
+          CONFIG
+          /tmp/litestream restore -config /tmp/litestream.yml -o /tmp/app.db /tmp/source.db
+          test "$(sqlite3 /tmp/app.db 'PRAGMA integrity_check;')" = "ok"
+          sqlite3 /tmp/app.db "SELECT 'accounts=' || count(*) FROM local_accounts; SELECT 'guidelines=' || count(*) FROM guidelines; SELECT 'submissions=' || count(*) FROM submissions;"
