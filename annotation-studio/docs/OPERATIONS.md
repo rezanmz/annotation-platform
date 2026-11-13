@@ -36,7 +36,8 @@ The service is configured with root directory `/annotation-studio`, Dockerfile `
 watch pattern `annotation-studio/**`. Once the Railway GitHub App is connected to
 `rezanmz/annotation-platform` (branch `main`), pushes deploy automatically after CI.
 
-Manual deploy from the repository root (keeps the private guideline PDFs in the image):
+Manual deploy from the repository root (keeps the private guideline PDFs in the image; preferred when
+the volume needs re-seeding):
 
 ```sh
 railway up -s annotation-studio -e production --ci --no-gitignore
