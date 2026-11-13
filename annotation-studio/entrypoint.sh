@@ -22,18 +22,19 @@ node --experimental-strip-types --no-warnings scripts/prune.ts
 
 if [ -n "${LITESTREAM_BUCKET:-}" ]; then
   cat > /tmp/litestream.yml <<CONFIG
+snapshot:
+  interval: 24h
+  retention: ${LITESTREAM_RETENTION:-336h}
+l0-retention: ${LITESTREAM_RETENTION:-336h}
 dbs:
   - path: ${DATABASE_PATH}
-    replicas:
-      - type: s3
-        bucket: ${LITESTREAM_BUCKET}
-        path: ${LITESTREAM_PATH:-annotation-studio}
-        endpoint: ${LITESTREAM_ENDPOINT}
-        region: ${LITESTREAM_REGION:-auto}
-        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
-        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
-        retention: 720h
-        sync-interval: 1s
+    replica:
+      type: s3
+      url: s3://${LITESTREAM_BUCKET}/${LITESTREAM_PATH:-annotation-studio}
+      region: ${LITESTREAM_REGION}
+      endpoint: ${LITESTREAM_ENDPOINT}
+      force-path-style: true
+      sync-interval: ${LITESTREAM_SYNC_INTERVAL:-1s}
 CONFIG
   exec litestream replicate -config /tmp/litestream.yml -exec "node dist/standalone/server.js"
 fi
