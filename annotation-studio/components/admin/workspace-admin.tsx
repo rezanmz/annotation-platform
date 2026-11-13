@@ -18,6 +18,18 @@ export function WorkspaceAdmin({ accounts, action, refresh }: { accounts: Annota
   const [success, setSuccess] = useState("");
   const admins = accounts.filter((account) => account.role === "admin");
 
+  async function manage(payload: Record<string, unknown>, message: string, confirmation: string) {
+    if (busy) return;
+    if (!window.confirm(confirmation)) return;
+    setBusy(true); setError(""); setSuccess("");
+    try {
+      await action(payload);
+      setSuccess(message);
+      await refresh();
+    } catch (failure) { setError(failure instanceof Error ? failure.message : "The administrator change could not be saved."); }
+    finally { setBusy(false); }
+  }
+
   async function submit() {
     if (busy) return;
     setBusy(true); setError(""); setSuccess("");
@@ -33,7 +45,15 @@ export function WorkspaceAdmin({ accounts, action, refresh }: { accounts: Annota
   return <section className="admin-card">
     <div className="admin-section-heading"><div><p className="admin-eyebrow">WORKSPACE ADMINISTRATORS</p><h2>Administrators</h2><p>Administrators manage all projects, accounts, keys, imports, exports, and guidelines. Keep at least two so the workspace is not dependent on one person.</p></div><ShieldCheck size={25} aria-hidden="true" /></div>
     <div className="admin-members-list"><div className="admin-list-header"><span>ADMINISTRATOR</span><span>ROLE</span></div>
-      {admins.map((account) => <div className="admin-member-row" key={account.id}><div><strong>{account.name}</strong><small>{account.email}</small></div><span className="admin-badge"><ShieldCheck size={12} />Administrator</span></div>)}
+      {admins.map((account) => <div className="admin-member-row" key={account.id}>
+        <div><strong>{account.name}</strong><small>{account.email}</small></div>
+        <div className="admin-member-actions">
+          <span className={`admin-badge ${account.active ? "" : "admin-badge-pending"}`}><ShieldCheck size={12} />{account.active ? "Administrator" : "Disabled"}</span>
+          <button type="button" className="admin-text-button admin-muted" disabled={busy} onClick={() => void manage({ action: "setAccountRole", email: account.email, role: "annotator" }, `${account.email} is now an annotator without project access.`, `Demote ${account.email} to annotator? They lose administrator access and any project assignment. Saved work is kept.`)}>Demote</button>
+          <button type="button" className="admin-text-button admin-muted" disabled={busy} onClick={() => void manage({ action: "setAccountActive", email: account.email, active: !account.active }, `${account.email} was ${account.active ? "disabled" : "reactivated"}.`, `${account.active ? "Disable" : "Reactivate"} ${account.email}?`)}>{account.active ? "Disable" : "Reactivate"}</button>
+          <button type="button" className="admin-text-button admin-muted" disabled={busy} onClick={() => void manage({ action: "eraseAccount", email: account.email }, `${account.email} was erased. Submitted work is retained without their identity.`, `Erase ${account.email}? Their account is anonymized and sessions are revoked. This cannot be undone.`)}>Erase</button>
+        </div>
+      </div>)}
     </div>
     <form className="admin-account-form" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <div className="admin-account-fields">

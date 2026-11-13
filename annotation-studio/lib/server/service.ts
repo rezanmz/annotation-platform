@@ -185,6 +185,10 @@ export class AnnotationService {
       case "createAnnotator": return this.createAnnotator(input);
       case "createAdmin": return this.createAdmin(input);
       case "eraseAnnotator": return this.eraseAnnotator(input);
+      case "setAccountRole": return this.setAccountRole(input);
+      case "setAccountActive": return this.setAccountActive(input);
+      case "resetAccountPassword": return this.resetAccountPassword(input);
+      case "eraseAccount": return this.eraseAccount(input);
       case "addMember": {
         const project = projectById(string(input.projectId, "Project", 100));
         const account = await this.annotatorAccount(input.email);
@@ -252,6 +256,57 @@ export class AnnotationService {
       .bind(before ?? null, before ?? null, size)
       .all<{ id: string; actorId: string; action: string; target: string; metadata: string; createdAt: string }>();
     return { entries: rows.results.map(({ metadata, ...entry }) => ({ ...entry, metadata: JSON.parse(metadata) })) };
+  }
+  private async managedAccount(value: unknown, allowAdmin = false) {
+    const email = normalizeEmail(value);
+    const account = await this.db.prepare("SELECT id, name, email, role, active, must_change_password FROM local_accounts WHERE email = ?").bind(email).first<AccountRow>();
+    if (!account) throw new ApiError(404, "Account not found.");
+    if (!allowAdmin && account.role !== "annotator") throw new ApiError(403, "Use the administrator controls for an administrator account.");
+    return account;
+  }
+  private async assertAnotherAdmin(excludingId: string) {
+    const row = await this.db.prepare("SELECT count(*) AS n FROM local_accounts WHERE role = 'admin' AND active = 1 AND id <> ?").bind(excludingId).first<{ n: number }>();
+    if (!row || row.n < 1) throw new ApiError(409, "Create or activate another administrator before changing the last active administrator.");
+  }
+  private async setAccountRole(input: Record<string, unknown>) {
+    const account = await this.managedAccount(input.email, true);
+    const role = input.role;
+    if (role !== "admin" && role !== "annotator") throw new ApiError(400, "Choose a valid account role.");
+    if (account.role === role) return { ok: true };
+    if (account.role === "admin") await this.assertAnotherAdmin(account.id);
+    const now = new Date().toISOString();
+    const statements = [this.db.prepare("UPDATE local_accounts SET role = ?, updated_at = ? WHERE id = ?").bind(role, now, account.id)];
+    if (role === "admin") statements.push(this.db.prepare("DELETE FROM memberships WHERE user_id = ? OR lower(email) = ?").bind(account.id, account.email));
+    await this.db.batch(statements);
+    await this.audit("account.role", account.id, { email: account.email, role });
+    return { ok: true };
+  }
+  private async setAccountActive(input: Record<string, unknown>) {
+    const account = await this.managedAccount(input.email, true);
+    if (typeof input.active !== "boolean") throw new ApiError(400, "Choose whether the account is active.");
+    if (!input.active && account.role === "admin") await this.assertAnotherAdmin(account.id);
+    await new AuthService(this.db).setActive(account.id, input.active);
+    await this.audit("account.setActive", account.id, { email: account.email, active: input.active });
+    return { ok: true };
+  }
+  private async resetAccountPassword(input: Record<string, unknown>) {
+    const account = await this.managedAccount(input.email, true);
+    await new AuthService(this.db).resetPassword(account.id, input.password);
+    await this.audit("password.reset", account.id, { email: account.email });
+    return { ok: true };
+  }
+  private async eraseAccount(input: Record<string, unknown>) {
+    const account = await this.managedAccount(input.email, true);
+    if (account.role === "admin") await this.assertAnotherAdmin(account.id);
+    const now = new Date().toISOString();
+    const scrub = await hashPassword(randomBytes(32).toString("base64url"));
+    await this.db.batch([
+      this.db.prepare("UPDATE local_accounts SET email = ?, name = ?, password_hash = ?, active = 0, updated_at = ? WHERE id = ?").bind(`deleted+${account.id}@invalid.local`, "Deleted account", scrub, now, account.id),
+      this.db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").bind(account.id),
+      this.db.prepare("DELETE FROM memberships WHERE user_id = ? OR lower(email) = ?").bind(account.id, account.email),
+    ]);
+    await this.audit("account.erase", account.id, { email: account.email, role: account.role });
+    return { ok: true };
   }
   private async annotatorAccount(value: unknown) {
     const email = normalizeEmail(value);
