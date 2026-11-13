@@ -290,9 +290,9 @@ export class AnnotationService {
   private async deleteProject(input: Record<string, unknown>) {
     const id = validId(input.projectId, "Project ID");
     await projectById(this.db, id);
-    const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS documents, (SELECT count(*) FROM submissions WHERE project_id = ?) AS submissions, (SELECT count(*) FROM memberships WHERE project_id = ?) AS memberships").bind(id, id, id).first<{ documents: number; submissions: number; memberships: number }>();
-    if ((counts?.documents ?? 0) + (counts?.submissions ?? 0) + (counts?.memberships ?? 0) > 0) {
-      throw new ApiError(409, "Remove all documents, submissions, and member assignments before deleting this project.");
+    const counts = await this.db.prepare("SELECT (SELECT count(*) FROM documents WHERE project_id = ?) AS documents, (SELECT count(*) FROM submissions WHERE project_id = ?) AS submissions, (SELECT count(*) FROM memberships WHERE project_id = ?) AS memberships, (SELECT count(*) FROM qualifications WHERE project_id = ?) AS qualifications, (SELECT count(*) FROM qualification_attempts WHERE project_id = ?) AS attempts, (SELECT count(*) FROM guideline_acknowledgements WHERE project_id = ?) AS acknowledgements").bind(id, id, id, id, id, id).first<{ documents: number; submissions: number; memberships: number; qualifications: number; attempts: number; acknowledgements: number }>();
+    if ((counts?.documents ?? 0) + (counts?.submissions ?? 0) + (counts?.memberships ?? 0) + (counts?.qualifications ?? 0) + (counts?.attempts ?? 0) + (counts?.acknowledgements ?? 0) > 0) {
+      throw new ApiError(409, "Remove all documents, submissions, member assignments, and qualification history before deleting this project.");
     }
     await this.db.prepare("DELETE FROM projects WHERE id = ?").bind(id).run();
     await this.audit("project.delete", id);
