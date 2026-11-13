@@ -42,8 +42,10 @@ the volume needs re-seeding):
 ```sh
 railway up -s annotation-studio -e production --ci --no-gitignore
 ```
- `railway.json` sets the Dockerfile build,
-health check (`/api/health`), and restart policy.
+Railway Config as Code (`railway.json`) is deprecated with a hard cutoff on 2026-12-01, so deploy
+settings live in the Railway service: root directory `/annotation-studio`, Dockerfile build, health
+check `/api/health`, `ON_FAILURE` restart, one replica. The GitHub trigger waits for CI
+(`checkSuites`). The repository deliberately has no `railway.json`.
 
 ## Health and logs
 
