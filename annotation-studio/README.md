@@ -48,8 +48,11 @@ server (under Litestream when configured). Migrations are idempotent. The health
 - The administrator has no project; annotators belong to exactly one project, and a project can have
   many annotators. Every server route rechecks membership and identity.
 - Annotators can change their own password at `/account/password`; this revokes their other sessions.
-  Administrators can reset annotator passwords, disable accounts, erase an annotator's identity
-  (keeping submitted work), and create additional administrators.
+  `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts, resets
+  passwords, disables/reactivates, removes project access, erases an identity (keeping submitted
+  work), and creates additional administrators.
+- `/admin` → **Qualification** uploads, replaces, downloads, or removes the legal and chemistry
+  guideline PDFs, so no server access is needed to change them.
 - Disabled accounts cannot sign in and existing sessions stop working. Password resets and account
   erasure revoke sessions.
 

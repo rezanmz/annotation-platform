@@ -98,6 +98,20 @@ decrypt it, and confirm `PRAGMA integrity_check` returns `ok` and the account/su
 GitHub disables scheduled workflows after 60 days without repository activity, so a silent gap is
 possible; the Pro volume backups or a Railway bucket + Litestream remove that dependency.
 
+## Guidelines and user management
+
+- **Guidelines:** `/admin` → **Qualification** uploads, replaces, downloads, or removes the legal and
+  chemistry PDFs. Files are written atomically to `GUIDELINES_DIR`, served on the next request, and
+  included in volume backups. Removing a guideline makes that domain return a clear 503 until a
+  replacement is uploaded. PDFs are limited to 25 MB and validated by magic bytes.
+- **Annotators:** `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts,
+  resets passwords, disables/reactivates, removes project access, and erases an identity (anonymizes
+  the account, revokes sessions, and keeps submitted work).
+- **Administrators:** the same tab lists administrators and creates additional ones, so the workspace
+  does not depend on a single person.
+- **Self-service:** every user can change their own password at `/account/password`.
+- **Audit:** `GET /api/admin/audit` returns the recorded administrator and password-change actions.
+
 ## Accounts and recovery
 
 - The admin can reset annotator passwords, disable accounts, and erase an annotator (anonymizes the
