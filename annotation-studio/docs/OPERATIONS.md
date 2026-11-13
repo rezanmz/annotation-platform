@@ -58,10 +58,16 @@ check `/api/health`, `ON_FAILURE` restart, one replica. The GitHub trigger waits
 
 Two independent layers:
 
-1. **Litestream** (continuous): set `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`, `LITESTREAM_REGION`,
-   `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, and optionally `LITESTREAM_PATH`.
-   The database is replicated every second with 720 h retention. This is the point-in-time layer and
-   survives loss of the Railway volume.
+1. **Litestream to Backblaze B2** (continuous): `LITESTREAM_BUCKET`, `LITESTREAM_ENDPOINT`,
+   `LITESTREAM_REGION`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`,
+   `LITESTREAM_PATH`, `LITESTREAM_RETENTION` (default `336h` = 14 days), and
+   `LITESTREAM_SYNC_INTERVAL` (default `1s`). Every committed SQLite change is shipped as an LTX
+   file within about a second; a daily full snapshot is also kept for 14 days. Restore:
+   `litestream restore -config /tmp/litestream.yml -o /tmp/app.db /data/app.db`, then verify with
+   `PRAGMA integrity_check` and boot the app against the restored file before switching the volume.
+   B2 cost at this scale is roughly storage (<$0.01/month for a small DB) plus Class A transaction
+   charges; 1 s sync is on the order of $1/month, and `LITESTREAM_SYNC_INTERVAL=10s` cuts that by
+   about 10x with a ten-second RPO.
 2. **Encrypted snapshots (active, plan-independent):** `GET /api/admin/backup` takes a consistent
    `VACUUM INTO` snapshot of the live database and returns the SQLite file. It requires
    `BACKUP_TOKEN` (48 random bytes, Bearer auth) and never caches. The `backup` GitHub Actions
@@ -107,8 +113,9 @@ possible; the Pro volume backups or a Railway bucket + Litestream remove that de
 - **Annotators:** `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts,
   resets passwords, disables/reactivates, removes project access, and erases an identity (anonymizes
   the account, revokes sessions, and keeps submitted work).
-- **Administrators:** the same tab lists administrators and creates additional ones, so the workspace
-  does not depend on a single person.
+- **Administrators:** the same tab lists administrators, creates additional ones, promotes
+  annotators, demotes administrators back to annotators, disables/reactivates, and erases them. The
+  API refuses to demote, disable, or erase the last active administrator.
 - **Self-service:** every user can change their own password at `/account/password`.
 - **Audit:** `GET /api/admin/audit` returns the recorded administrator and password-change actions.
 

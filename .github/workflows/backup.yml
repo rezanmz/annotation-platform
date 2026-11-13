@@ -45,5 +45,5 @@ jobs:
         with:
           name: annotation-backup-${{ github.run_id }}
           path: backup/
-          retention-days: 90
+          retention-days: 14
           if-no-files-found: error
