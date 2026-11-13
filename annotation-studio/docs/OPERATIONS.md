@@ -32,13 +32,16 @@ restarts it and the health check stays red.
 
 ## Deploy
 
+The service is configured with root directory `/annotation-studio`, Dockerfile `Dockerfile`, and
+watch pattern `annotation-studio/**`. Once the Railway GitHub App is connected to
+`rezanmz/annotation-platform` (branch `main`), pushes deploy automatically after CI.
+
+Manual deploy from the repository root (keeps the private guideline PDFs in the image):
+
 ```sh
-cd annotation-studio
 railway up -s annotation-studio -e production --ci --no-gitignore
 ```
-
-`--no-gitignore` is required so the private guideline PDFs in `guidelines/` are included in the image;
-they are excluded from Git and from the public repository. `railway.json` sets the Dockerfile build,
+ `railway.json` sets the Dockerfile build,
 health check (`/api/health`), and restart policy.
 
 ## Health and logs
