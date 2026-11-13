@@ -22,6 +22,13 @@ export async function service() {
   await instance.claimInvitations();
   return instance;
 }
+export async function adminActor(): Promise<AuthActor> {
+  const user = await actor();
+  if (!user) throw new ApiError(401, "Sign in to continue.");
+  if (!user.isAdmin) throw new ApiError(403, "Administrator access is required.");
+  assertExpectedActor((await headers()).get("X-Annotation-Actor"), user);
+  return user;
+}
 export function json(value: unknown, status = 200, headers?: Record<string, string>) { return Response.json(value, { status, headers: { ...noCache, ...headers } }); }
 
 /** Client address for login throttling. Only trusted behind our own proxy. */
@@ -57,30 +64,42 @@ export async function handle(work: () => Promise<unknown>): Promise<Response> {
     return json({ error: "The server could not complete this request. If you were submitting, keep this page open and retry; your existing saved annotations are unchanged.", requestId: id }, 503, { "X-Request-Id": id });
   }
 }
-export async function readJson(request: Request): Promise<unknown> {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) throw new ApiError(403, "Cross-origin requests are not permitted.");
-  if (request.headers.get("sec-fetch-site") === "cross-site") throw new ApiError(403, "Cross-site requests are not permitted.");
-  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new ApiError(415, "Send JSON with Content-Type application/json.");
-  const limit = 12 * 1024 * 1024;
+async function readBody(request: Request, limit: number): Promise<Uint8Array> {
   const declared = Number(request.headers.get("content-length"));
-  if (declared > limit) throw new ApiError(413, "This import is too large. Use a smaller batch.");
+  if (declared > limit) throw new ApiError(413, "This request is too large.");
   const reader = request.body?.getReader();
-  if (!reader) throw new ApiError(400, "A JSON body is required.");
+  if (!reader) throw new ApiError(400, "A request body is required.");
   const chunks: Uint8Array[] = [];
   let length = 0;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     length += value.byteLength;
-    if (length > limit) { await reader.cancel(); throw new ApiError(413, "This request is too large. Use a smaller batch."); }
+    if (length > limit) { await reader.cancel(); throw new ApiError(413, "This request is too large."); }
     chunks.push(value);
   }
   const bytes = new Uint8Array(length);
   let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return bytes;
+}
+function assertSameOrigin(request: Request): void {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) throw new ApiError(403, "Cross-origin requests are not permitted.");
+  if (request.headers.get("sec-fetch-site") === "cross-site") throw new ApiError(403, "Cross-site requests are not permitted.");
+}
+export async function readJson(request: Request): Promise<unknown> {
+  assertSameOrigin(request);
+  if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) throw new ApiError(415, "Send JSON with Content-Type application/json.");
+  const bytes = await readBody(request, 12 * 1024 * 1024);
   try { return JSON.parse(new TextDecoder().decode(bytes)); }
   catch { throw new ApiError(400, "The request body must be valid JSON."); }
+}
+export async function readPdf(request: Request): Promise<Uint8Array> {
+  assertSameOrigin(request);
+  const type = request.headers.get("content-type")?.toLowerCase().split(";")[0].trim();
+  if (type !== "application/pdf") throw new ApiError(415, "Upload the guideline as application/pdf.");
+  return readBody(request, 25 * 1024 * 1024);
 }
 export function pdfResponse(bytes: Uint8Array, filename: string) {
   return new Response(bytes as BodyInit, { headers: { ...noCache, "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"` } });
