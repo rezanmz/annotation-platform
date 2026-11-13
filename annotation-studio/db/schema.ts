@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 export const localAccounts = sqliteTable("local_accounts", {
   id: text("id").primaryKey(), email: text("email").notNull(), name: text("name").notNull(), passwordHash: text("password_hash").notNull(),
@@ -13,6 +13,10 @@ export const authSessions = sqliteTable("auth_sessions", {
 export const authRateLimits = sqliteTable("auth_rate_limits", {
   scopeHash: text("scope_hash").primaryKey(), attempts: integer("attempts").notNull(), windowStartedAt: integer("window_started_at").notNull(),
 }, (t) => [index("auth_rate_limits_window").on(t.windowStartedAt)]);
+
+export const guidelines = sqliteTable("guidelines", {
+  domain: text("domain").primaryKey(), bytes: blob("bytes").notNull(), sha256: text("sha256").notNull(), updatedAt: text("updated_at").notNull(),
+});
 
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey(), actorId: text("actor_id").notNull(), action: text("action").notNull(), target: text("target").notNull(), metadata: text("metadata").notNull(), createdAt: text("created_at").notNull(),

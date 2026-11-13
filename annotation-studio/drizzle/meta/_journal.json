@@ -43,6 +43,13 @@
       "when": 1794524671807,
       "tag": "0005_huge_butterfly",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794581303235,
+      "tag": "0006_tense_wrecker",
+      "breakpoints": true
     }
   ]
 }

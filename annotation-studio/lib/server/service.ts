@@ -189,6 +189,7 @@ export class AnnotationService {
       case "setAccountActive": return this.setAccountActive(input);
       case "resetAccountPassword": return this.resetAccountPassword(input);
       case "eraseAccount": return this.eraseAccount(input);
+      case "deleteLoadTestDocument": return this.deleteLoadTestDocument(input);
       case "addMember": {
         const project = projectById(string(input.projectId, "Project", 100));
         const account = await this.annotatorAccount(input.email);
@@ -256,6 +257,17 @@ export class AnnotationService {
       .bind(before ?? null, before ?? null, size)
       .all<{ id: string; actorId: string; action: string; target: string; metadata: string; createdAt: string }>();
     return { entries: rows.results.map(({ metadata, ...entry }) => ({ ...entry, metadata: JSON.parse(metadata) })) };
+  }
+  private async deleteLoadTestDocument(input: Record<string, unknown>) {
+    const project = projectById(string(input.projectId, "Project", 100));
+    const documentId = validId(input.documentId, "Document ID");
+    if (!documentId.startsWith("load-")) throw new ApiError(400, "Only load-test documents can be removed through this action.");
+    await this.db.batch([
+      this.db.prepare("DELETE FROM submissions WHERE project_id = ? AND document_id = ?").bind(project.id, documentId),
+      this.db.prepare("DELETE FROM documents WHERE project_id = ? AND id = ?").bind(project.id, documentId),
+    ]);
+    await this.audit("loadtest.delete", `${project.id}:${documentId}`);
+    return { ok: true };
   }
   private async managedAccount(value: unknown, allowAdmin = false) {
     const email = normalizeEmail(value);

@@ -1,7 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { mkdirSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { hashPassword, validatePassword } from "../lib/server/password.ts";
+import { createHash } from "node:crypto";
 
 type Keys = { version: string; answers: { legal: string[]; chemistry: string[] } };
 
@@ -50,6 +51,21 @@ if (keys) {
       throw error;
     }
   }
+}
+
+// Move guideline PDFs seeded on the volume into SQLite once, so Litestream
+// and every database snapshot include them.
+const guidelineDir = process.env.GUIDELINES_DIR?.trim() || "/data/guidelines";
+const existingGuidelines = new Set((db.prepare("SELECT domain FROM guidelines").all() as { domain: string }[]).map((row) => row.domain));
+for (const domain of ["legal", "chemistry"] as const) {
+  if (existingGuidelines.has(domain)) continue;
+  const file = join(guidelineDir, `${domain}.pdf`);
+  if (!existsSync(file)) continue;
+  const bytes = readFileSync(file);
+  if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") continue;
+  db.prepare("INSERT INTO guidelines (domain, bytes, sha256, updated_at) VALUES (?, ?, ?, ?)")
+    .run(domain, bytes, createHash("sha256").update(bytes).digest("hex"), new Date().toISOString());
+  console.log(`Imported ${domain} guideline into the database.`);
 }
 
 const admin = db.prepare("SELECT id FROM local_accounts WHERE role = 'admin' AND active = 1 LIMIT 1").get();

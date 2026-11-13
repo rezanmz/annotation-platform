@@ -47,6 +47,19 @@ settings live in the Railway service: root directory `/annotation-studio`, Docke
 check `/api/health`, `ON_FAILURE` restart, one replica. The GitHub trigger waits for CI
 (`checkSuites`). The repository deliberately has no `railway.json`.
 
+## Live concurrency test
+
+`scripts/load-test.mjs` creates temporary annotators, imports a `load-*` document, has them
+acknowledge/qualify/submit concurrently, then erases the accounts and deletes the document:
+
+```sh
+BASE_URL=https://… ADMIN_EMAIL=… ADMIN_PASSWORD=… ANSWERS='["C","A",…]' USERS=15 \
+  node annotation-studio/scripts/load-test.mjs
+```
+
+It prints success count, unique receipts, failures, and p50/p95 latency. Use a temporary
+administrator and remove it afterwards.
+
 ## Health and logs
 
 - `GET /api/health` checks SQLite (`SELECT 1`) and returns 200/503.
@@ -106,14 +119,16 @@ possible; the Pro volume backups or a Railway bucket + Litestream remove that de
 
 ## Guidelines and user management
 
-- **Guidelines:** `/admin` → **Qualification** uploads, replaces, downloads, or removes the legal and
-  chemistry PDFs. Files are written atomically to `GUIDELINES_DIR`, served on the next request, and
-  included in volume backups. Removing a guideline makes that domain return a clear 503 until a
-  replacement is uploaded. PDFs are limited to 25 MB and validated by magic bytes.
+- **Guidelines:** `/admin` → **Guidelines** uploads, replaces, downloads, or removes the legal and
+  chemistry PDFs. PDFs are stored as rows in SQLite (`guidelines` table), so Litestream, the daily
+  encrypted snapshot, and the B2 replica all cover them; the volume is not the only copy. On first
+  boot, PDFs already present in `GUIDELINES_DIR` are imported into the database. Removing a guideline
+  makes that domain return a clear 503 until a replacement is uploaded. PDFs are limited to 25 MB and
+  validated by magic bytes.
 - **Annotators:** `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts,
   resets passwords, disables/reactivates, removes project access, and erases an identity (anonymizes
   the account, revokes sessions, and keeps submitted work).
-- **Administrators:** the same tab lists administrators, creates additional ones, promotes
+- **Administrators:** `/admin` → **Administrators** lists administrators, creates additional ones, promotes
   annotators, demotes administrators back to annotators, disables/reactivates, and erases them. The
   API refuses to demote, disable, or erase the last active administrator.
 - **Self-service:** every user can change their own password at `/account/password`.
