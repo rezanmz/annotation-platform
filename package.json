@@ -1,0 +1,7 @@
+{
+  "name": "annotation-platform-infra",
+  "private": true,
+  "devDependencies": {
+    "railway": "3.17.0"
+  }
+}
