@@ -16,7 +16,7 @@ export function WorkspaceAdmin({ accounts, action, refresh }: { accounts: Annota
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const admins = accounts.filter((account) => account.role === "admin");
+  const admins = accounts.filter((account) => account.role === "admin" && !account.email.startsWith("deleted+"));
 
   async function manage(payload: Record<string, unknown>, message: string, confirmation: string) {
     if (busy) return;

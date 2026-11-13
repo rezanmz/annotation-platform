@@ -24,8 +24,8 @@ export function Members({ project, memberships, accounts, action, refresh }: { p
   const [showReset, setShowReset] = useState(false);
   const [accountChange, setAccountChange] = useState<{ email: string; active: boolean } | null>(null);
   const members = memberships.filter((member) => member.projectId === project.id);
-  const available = accounts.filter((account) => account.role === "annotator" && account.active && account.assignmentCount === 0);
-  const disabledUnassigned = accounts.filter((account) => account.role === "annotator" && !account.active && account.assignmentCount === 0);
+  const available = accounts.filter((account) => account.role === "annotator" && account.active && account.assignmentCount === 0 && !account.email.startsWith("deleted+"));
+  const disabledUnassigned = accounts.filter((account) => account.role === "annotator" && !account.active && account.assignmentCount === 0 && !account.email.startsWith("deleted+"));
 
   async function change(payload: Record<string, unknown>, message: string, afterSave?: () => void) {
     if (busy) return;

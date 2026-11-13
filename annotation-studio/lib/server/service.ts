@@ -464,6 +464,7 @@ export class AnnotationService {
     const project = await projectById(this.db, projectId);
     const rows = await this.db.prepare("SELECT s.id, s.project_id AS projectId, s.document_id AS documentId, s.user_id AS userId, s.request_id AS requestId, s.qualification_version AS qualificationVersion, (SELECT q.passed_at FROM qualifications q WHERE q.project_id = s.project_id AND q.user_id = s.user_id AND q.version = s.qualification_version ORDER BY q.passed_at LIMIT 1) AS qualificationPassedAt, s.saved_at AS savedAt, s.payload, d.title, d.source, d.question, d.answer FROM submissions s JOIN documents d ON d.project_id = s.project_id AND d.id = s.document_id WHERE s.project_id = ? ORDER BY s.saved_at, s.id").bind(projectId).all<{ payload: string; [key: string]: unknown }>();
     const answerKeys = (await this.db.prepare("SELECT version, answers, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt FROM answer_key_versions WHERE domain = ? ORDER BY confirmed_at").bind(project.domain).all<{ answers: string; [key: string]: unknown }>()).results.map((key) => ({ ...key, answers: JSON.parse(key.answers) }));
+    await this.audit("annotations.export", projectId, { annotations: rows.results.length });
     return { project, exportedAt: new Date().toISOString(), answerKeys, annotations: rows.results.map(({ payload, ...row }) => ({ ...row, ...JSON.parse(payload) })) };
   }
 }
