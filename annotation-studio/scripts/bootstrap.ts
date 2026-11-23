@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { hashPassword, validatePassword } from "../lib/server/password.ts";
 import { createHash } from "node:crypto";
+import { seedDefaultAnnotators } from "./default-annotators.ts";
 
 type Keys = { version: string; answers: { legal: string[]; chemistry: string[] } };
 
@@ -30,65 +31,73 @@ function parsedKeys(): Keys | null {
 const databasePath = resolve(process.env.DATABASE_PATH?.trim() || ".data/app.db");
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new DatabaseSync(databasePath);
-db.exec("PRAGMA journal_mode = WAL");
-db.exec("PRAGMA busy_timeout = 5000");
+const messages: string[] = [];
 
-const keys = parsedKeys();
-if (keys) {
+function seedKeys() {
+  const keys = parsedKeys();
+  if (!keys) return;
   const current = db.prepare("SELECT version FROM answer_keys WHERE domain = ?");
   const now = new Date().toISOString();
   for (const domain of ["legal", "chemistry"] as const) {
     if (current.get(domain)) continue;
     const answers = JSON.stringify(keys.answers[domain]);
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      db.prepare("INSERT OR IGNORE INTO answer_key_versions (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
-      db.prepare("INSERT INTO answer_keys (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
-      db.exec("COMMIT");
-      console.log(`Seeded ${domain} qualification key ${keys.version}.`);
-    } catch (error) {
-      try { db.exec("ROLLBACK"); } catch { /* ignore */ }
-      throw error;
-    }
+    db.prepare("INSERT OR IGNORE INTO answer_key_versions (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
+    db.prepare("INSERT INTO answer_keys (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
+    messages.push(`Seeded ${domain} qualification key ${keys.version}.`);
   }
 }
 
 // Move guideline PDFs seeded on the volume into SQLite once, so Litestream
 // and every database snapshot include them.
-const guidelineDir = process.env.GUIDELINES_DIR?.trim() || "/data/guidelines";
-const existingGuidelines = new Set((db.prepare("SELECT domain FROM guidelines").all() as { domain: string }[]).map((row) => row.domain));
-for (const domain of ["legal", "chemistry"] as const) {
-  if (existingGuidelines.has(domain)) continue;
-  const file = join(guidelineDir, `${domain}.pdf`);
-  if (!existsSync(file)) continue;
-  const bytes = readFileSync(file);
-  if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") continue;
-  db.prepare("INSERT INTO guidelines (domain, bytes, sha256, updated_at) VALUES (?, ?, ?, ?)")
-    .run(domain, bytes, createHash("sha256").update(bytes).digest("hex"), new Date().toISOString());
-  console.log(`Imported ${domain} guideline into the database.`);
+function seedGuidelines() {
+  const guidelineDir = process.env.GUIDELINES_DIR?.trim() || "/data/guidelines";
+  const existingGuidelines = new Set((db.prepare("SELECT domain FROM guidelines").all() as { domain: string }[]).map((row) => row.domain));
+  for (const domain of ["legal", "chemistry"] as const) {
+    if (existingGuidelines.has(domain)) continue;
+    const file = join(guidelineDir, `${domain}.pdf`);
+    if (!existsSync(file)) continue;
+    const bytes = readFileSync(file);
+    if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") continue;
+    db.prepare("INSERT INTO guidelines (domain, bytes, sha256, updated_at) VALUES (?, ?, ?, ?)")
+      .run(domain, bytes, createHash("sha256").update(bytes).digest("hex"), new Date().toISOString());
+    messages.push(`Imported ${domain} guideline into the database.`);
+  }
 }
 
-const admin = db.prepare("SELECT id FROM local_accounts WHERE role = 'admin' AND active = 1 LIMIT 1").get();
-if (admin) {
-  console.log("Administrator account already exists; nothing to bootstrap.");
-  db.close();
-  process.exit(0);
+async function seedAdmin() {
+  const admin = db.prepare("SELECT id FROM local_accounts WHERE role = 'admin' AND active = 1 LIMIT 1").get();
+  if (admin) return;
+  const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  const name = process.env.BOOTSTRAP_ADMIN_NAME?.trim() || "Workspace administrator";
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!email || !password) {
+    console.warn("Set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD to create the first administrator.");
+    return;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("BOOTSTRAP_ADMIN_EMAIL is not a valid email address.");
+  if (name.length > 120) throw new Error("BOOTSTRAP_ADMIN_NAME is too long.");
+  validatePassword(password);
+  const hash = await hashPassword(password);
+  const now = new Date().toISOString();
+  db.prepare("INSERT INTO local_accounts (id, email, name, password_hash, role, active, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 'admin', 1, 0, ?, ?)")
+    .run(crypto.randomUUID(), email, name, hash, now, now);
+  messages.push(`Administrator ${email} created. Remove BOOTSTRAP_ADMIN_PASSWORD from the service variables now.`);
 }
 
-const email = process.env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
-const name = process.env.BOOTSTRAP_ADMIN_NAME?.trim() || "Workspace administrator";
-const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
-if (!email || !password) {
-  console.warn("No active administrator and BOOTSTRAP_ADMIN_EMAIL / BOOTSTRAP_ADMIN_PASSWORD are unset; skipping administrator creation.");
+try {
+  db.exec("PRAGMA busy_timeout = 30000");
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("BEGIN IMMEDIATE");
+  seedKeys();
+  seedGuidelines();
+  await seedAdmin();
+  const file = `${databasePath}.annotators.json`;
+  const { created, missingPasswords } = await seedDefaultAnnotators(db, file);
+  db.exec("COMMIT");
+  for (const message of messages) console.log(message);
+  console.log(`Created ${created} default annotators. Initial logins: ${file}`);
+  if (missingPasswords) console.warn(`Initial passwords unavailable for ${missingPasswords} existing accounts. Restore the private config backup or reset individual passwords in /admin.`);
+} finally {
+  // Closing also rolls back any uncommitted bootstrap work.
   db.close();
-  process.exit(0);
 }
-if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("BOOTSTRAP_ADMIN_EMAIL is not a valid email address.");
-if (name.length > 120) throw new Error("BOOTSTRAP_ADMIN_NAME is too long.");
-validatePassword(password);
-const hash = await hashPassword(password);
-const now = new Date().toISOString();
-db.prepare("INSERT INTO local_accounts (id, email, name, password_hash, role, active, must_change_password, created_at, updated_at) VALUES (?, ?, ?, ?, 'admin', 1, 0, ?, ?)")
-  .run(crypto.randomUUID(), email, name, hash, now, now);
-db.close();
-console.log(`Administrator ${email} created. Remove BOOTSTRAP_ADMIN_PASSWORD from the service variables now.`);

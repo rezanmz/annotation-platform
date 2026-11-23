@@ -3,6 +3,7 @@ dist
 .next
 .vinext
 .data
+**/*.annotators.json*
 .git
 .github
 *.log

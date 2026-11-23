@@ -11,8 +11,10 @@ this repository and never appear in its history.
 ```sh
 cd annotation-studio
 npm ci
-npm run build
-npm run migrate       # DATABASE_PATH defaults to .data/app.db
-npm run bootstrap     # requires BOOTSTRAP_ADMIN_* and QUALIFICATION_KEYS_JSON
 npm run dev
 ```
+
+Open `http://localhost:5173/login`. Startup creates one annotator for each of the 17 corpus-language
+pairs. Their initial email addresses and passwords are in `annotation-studio/.data/app.db.annotators.json`.
+For a custom `DATABASE_PATH`, append `.annotators.json` to that path. See the
+[application README](annotation-studio/README.md) to configure the administrator and qualification keys.

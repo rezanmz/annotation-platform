@@ -1,7 +1,7 @@
 # Operations
 
-Production target: a single Node 22 process (`vinext` standalone) on Railway, with SQLite on the
-`/data` volume. The database is the only stateful component; everything else is replaceable.
+Production runs a single Node 22 process (`vinext` standalone) on Railway. The persistent `/data`
+volume holds SQLite and the private config containing initial annotator logins.
 
 ## Runtime contract
 
@@ -26,9 +26,14 @@ is disabled by default and its endpoints return 404 unless `DEMO_ENABLED=1`.
 ## Boot sequence
 
 `entrypoint.sh` copies seed guidelines, fixes volume ownership, re-executes as `app`, applies
-`drizzle/*.sql` migrations (tracked in `_omp_migrations`), seeds keys/admin, then starts the server
-under Litestream when `LITESTREAM_BUCKET` is set. A failed migration aborts the container; Railway
-restarts it and the health check stays red.
+`drizzle/*.sql` migrations (tracked in `_omp_migrations`), seeds configured keys and the first
+administrator, and creates one default annotator for each pair in `project_languages`. It then starts
+the server under Litestream when `LITESTREAM_BUCKET` is set. A failed migration aborts startup.
+
+Read `/data/app.db.annotators.json` on the volume for the generated logins, indexed by corpus and
+language (for example, `eurlex/fr`). A custom `DATABASE_PATH` uses `<DATABASE_PATH>.annotators.json`.
+The file is owner-readable and writable (0600). Each installation generates its own passwords.
+Subsequent starts preserve individual password changes and administrator decisions.
 
 ## Deploy
 
@@ -68,6 +73,12 @@ administrator and remove it afterwards.
   need longer retention.
 
 ## Backups
+
+Keep a private backup of the credentials config if you need the initial passwords after a restore.
+Volume backups include the file. SQLite snapshots and Litestream contain password hashes only.
+After a database-only restore, startup lists existing accounts with a `null` password when their
+config entry is missing. They keep their current passwords. An administrator can reset them in
+`/admin`.
 
 Two independent layers:
 

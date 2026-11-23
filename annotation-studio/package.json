@@ -6,8 +6,10 @@
     "node": ">=22.18.0"
   },
   "scripts": {
+    "predev": "npm run setup:db",
     "dev": "vinext dev --port 5173",
     "build": "vinext build",
+    "prestart": "npm run setup:db",
     "start": "node dist/standalone/server.js",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .vinext",
     "db:generate": "drizzle-kit generate",
@@ -16,7 +18,8 @@
     "migrate": "node --experimental-strip-types --no-warnings scripts/migrate.ts",
     "bootstrap": "node --experimental-strip-types --no-warnings scripts/bootstrap.ts",
     "prune": "node --experimental-strip-types --no-warnings scripts/prune.ts",
-    "setup:local": "npm run build && npm run migrate && npm run bootstrap",
+    "setup:db": "npm run migrate && npm run bootstrap",
+    "setup:local": "npm run build && npm run setup:db",
     "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {

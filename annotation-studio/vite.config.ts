@@ -7,5 +7,9 @@ export default defineConfig({
   plugins: [vinext()],
   server: {
     host: process.env.HOST ?? "127.0.0.1",
+    fs: {
+      // Keep Vite's standard secret exclusions and protect private runtime files.
+      deny: [".env", ".env.*", "*.{crt,pem}", "**/.git/**", "**/.data/**", "*.annotators.json*"],
+    },
   },
 });
