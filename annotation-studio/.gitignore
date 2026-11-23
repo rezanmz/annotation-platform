@@ -47,7 +47,9 @@ yarn-error.log*
 # Commit the nonsecret environment example.
 !.env.example
 
-# Self-hosted runtime data (never commit)
-/.data/
+# Include the annotator roster when tracking the app's data directory.
+!/.data/**/*.annotators.json
+
+# Private guideline source files
 /guidelines/*
 !/guidelines/.gitkeep
