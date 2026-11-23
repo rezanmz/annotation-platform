@@ -9,7 +9,7 @@ accounts, explicit project memberships, and SQLite on a persistent volume.
 Node 22.18 or newer is required.
 
 Run `npm ci`, then `npm run dev` and open `http://localhost:5173/login`. Startup applies the
-migrations, creates 17 annotator accounts, and imports the supplied materials from the repository
+migrations and imports the supplied materials from the repository
 root. Place `legal_annotation_guidelines.pdf`, `chemistry_annotation_guidelines.pdf`, and
 `qualification-answer-keys.json` there, or set `ANNOTATION_MATERIALS_DIR` to their directory.
 To create the first administrator, set these variables before starting the app.
@@ -31,19 +31,12 @@ For a private container build, put the same three files inside `annotation-studi
 which Docker copies into the runtime image. Alternatively, point `ANNOTATION_MATERIALS_DIR` at
 a mounted directory containing the files. See the [operations guide](docs/OPERATIONS.md).
 
-The container and `npm start` apply migrations and provision accounts before serving requests.
+The container and `npm start` apply migrations and create the first administrator when configured.
 Build once with `npm run build` before using `npm start`. The container runs under Litestream when
 configured. The health endpoint is `/api/health`.
 
 ## Accounts and access
 
-- On first startup, EUR-Lex gets four default annotators, UN gets six, and Chemistry gets seven.
-  Each has one corpus-language assignment and its own random password. The private JSON config
-  sits beside the database at `<DATABASE_PATH>.annotators.json`, normally `.data/app.db.annotators.json`
-  locally and `/data/app.db.annotators.json` on Railway. Read the username and initial password for
-  EUR-Lex French with `jq '.["eurlex/fr"]' .data/app.db.annotators.json`.
-- The config records initial credentials. Restarting reuses existing accounts and respects password
-  changes, reassignments, removals, and disabled accounts. Additional reviewers can share a pair.
 - Each person has an individual account. Roles come from the database; there is no public signup.
 - Each annotator has one active assignment. For EUR-Lex, UN, and Chemistry, select a project and a
   document language in `/admin`, then create or assign accounts under **Annotators**. Several

@@ -3,7 +3,6 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { hashPassword, validatePassword } from "../lib/server/password.ts";
 import { installMaterials } from "./materials.ts";
-import { seedDefaultAnnotators } from "./default-annotators.ts";
 
 const databasePath = resolve(process.env.DATABASE_PATH?.trim() || ".data/app.db");
 mkdirSync(dirname(databasePath), { recursive: true });
@@ -36,12 +35,8 @@ try {
   db.exec("BEGIN IMMEDIATE");
   installMaterials(db, messages);
   await seedAdmin();
-  const file = `${databasePath}.annotators.json`;
-  const { created, missingPasswords } = await seedDefaultAnnotators(db, file);
   db.exec("COMMIT");
   for (const message of messages) console.log(message);
-  console.log(`Created ${created} default annotators. Initial logins: ${file}`);
-  if (missingPasswords) console.warn(`Initial passwords unavailable for ${missingPasswords} existing accounts. Restore the private config backup or reset individual passwords in /admin.`);
 } finally {
   // Closing also rolls back any uncommitted bootstrap work.
   db.close();

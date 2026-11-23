@@ -27,14 +27,11 @@ is disabled by default and its endpoints return 404 unless `DEMO_ENABLED=1`.
 ## Boot sequence
 
 `entrypoint.sh` copies seed guidelines, fixes volume ownership, re-executes as `app`, applies
-`drizzle/*.sql` migrations (tracked in `_omp_migrations`), seeds configured keys and the first
-administrator, and creates one default annotator for each pair in `project_languages`. It then starts
+`drizzle/*.sql` migrations (tracked in `_omp_migrations`), and seeds configured keys and the first
+administrator. It then starts
 the server under Litestream when `LITESTREAM_BUCKET` is set. A failed migration aborts startup.
 
-Read `/data/app.db.annotators.json` on the volume for the generated logins, indexed by corpus and
-language (for example, `eurlex/fr`). A custom `DATABASE_PATH` uses `<DATABASE_PATH>.annotators.json`.
-The file is owner-readable and writable (0600). Each installation generates its own passwords.
-Subsequent starts preserve individual password changes and administrator decisions.
+Create annotators and assign their project and language under **Annotators** in `/admin`.
 
 Supply `legal_annotation_guidelines.pdf` for EUR-Lex and UN, `chemistry_annotation_guidelines.pdf`
 for Chemistry, and `qualification-answer-keys.json` with `question_order` and ten A–D answers for
