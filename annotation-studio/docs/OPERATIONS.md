@@ -124,6 +124,13 @@ name/description, and deletes projects that have no documents, submissions, or m
 New projects choose the `legal` or `chemistry` domain, which determines the shared guideline and
 qualification key. The three original projects are seeded by the `projects` migration.
 
+Choose **Document language** after selecting EUR-Lex, United Nations, or Chemistry in `/admin`.
+The selection applies to CSV imports, document management, and annotator assignments. Remove a
+person's current assignment before moving them. Previously submitted work keeps the document's
+original language. For the admin API, send `language` with `projectId` on imports and assignments.
+For example, `GET /api/admin/export?projectId=un&language=fr` exports UN French reviews.
+Omit the language parameter for a whole-project export.
+
 ## Guidelines and user management
 
 - **Guidelines:** `/admin` → **Guidelines** uploads, replaces, downloads, or removes the legal and

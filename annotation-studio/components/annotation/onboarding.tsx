@@ -1,5 +1,6 @@
 'use client';
 
+import { assignmentName, type Language } from '@/lib/languages';
 import { useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, CheckCheck, CheckCircle2, ExternalLink, FileText, Loader2, LockKeyhole, ShieldCheck } from 'lucide-react';
 
@@ -15,7 +16,7 @@ export type TestQuestion = { id: string; question: string; options: { value: str
 export type TestResult = { passed: boolean; correct: number; total: number };
 
 type Props = {
-  project: { id: string; name: string; domain: string };
+  project: { id: string; name: string; domain: string; language: Language | null };
   qualification: Qualification;
   mode: 'guidelines' | 'qualification';
   demo: boolean;
@@ -59,7 +60,7 @@ export default function Onboarding({ project, qualification, mode, demo, questio
 
   return <>
     <div className="page-heading compact-heading onboarding-heading">
-      <div><div className="eyebrow">{project.name.toUpperCase()} · {passed ? 'GUIDELINE REFERENCE' : 'GETTING STARTED'}</div>
+      <div><div className="eyebrow">{assignmentName(project).toUpperCase()} · {passed ? 'GUIDELINE REFERENCE' : 'GETTING STARTED'}</div>
         <h1>{showGuideline ? 'Read the annotation guideline.' : passed ? 'You’re ready to annotate.' : 'Complete the qualification test.'}</h1>
         <p>{showGuideline ? passed ? 'Keep the guideline handy while reviewing. Your qualification is already complete.' : 'Read the complete guideline below before continuing to the test.' : passed ? 'All ten answers are correct. This project is now unlocked for you.' : 'Answer all ten questions correctly to unlock this project’s annotation documents.'}</p>
       </div>

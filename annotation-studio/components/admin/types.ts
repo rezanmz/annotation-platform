@@ -1,12 +1,15 @@
+import type { Language } from "@/lib/languages";
+
 export type AdminSession = {
   user: { id: string; email: string; name: string } | null;
   isAdmin: boolean;
   configured: boolean;
   authMode: "local" | "chatgpt";
 };
-export type AdminProject = { id: string; name: string; domain: string; description: string; total: number; members: number };
-export type Membership = { projectId: string; email: string; createdAt?: string; userId?: string; name?: string; active?: boolean | number };
-export type AnnotatorAccount = { id: string; name: string; email: string; role: "admin" | "annotator"; active: boolean; projectId: string | null; assignmentCount: number };
+export type AdminProject = { id: string; name: string; domain: string; description: string; total: number; members: number; languages: { code: Language; total: number; members: number }[] };
+export type AdminAssignment = { projectId: string; language: Language | null; label: string; total: number; members: number };
+export type Membership = { projectId: string; language: Language | null; email: string; createdAt?: string; userId?: string; name?: string; active?: boolean | number };
+export type AnnotatorAccount = { id: string; name: string; email: string; role: "admin" | "annotator"; active: boolean; projectId: string | null; language: Language | null; assignmentCount: number };
 export type AnswerKey = { domain: string; version: string; answers: string[] | null; proposedAnswers: string[]; confirmedAt: string | null; confirmed: boolean };
 export type KeyQuestion = { id: string; question: string; options: { value: string; label: string }[] };
 export type AdminData = { projects: AdminProject[]; memberships: Membership[]; answerKeys: AnswerKey[]; questions: KeyQuestion[]; accounts: AnnotatorAccount[] };

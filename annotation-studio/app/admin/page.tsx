@@ -11,7 +11,8 @@ import { ProjectsAdmin } from "@/components/admin/projects";
 import { AuditLog } from "@/components/admin/audit";
 import { WorkspaceAdmin } from "@/components/admin/workspace-admin";
 import SignOutButton from "@/components/auth/sign-out-button";
-import { apiJson, type AdminData, type AdminSession } from "@/components/admin/types";
+import { assignmentName, languageNames, type Language } from "@/lib/languages";
+import { apiJson, type AdminAssignment, type AdminData, type AdminSession } from "@/components/admin/types";
 import "./admin.css";
 
 type Tab = "documents" | "projects" | "annotators" | "administrators" | "guidelines" | "qualification" | "activity";
@@ -20,7 +21,7 @@ const projectIcons = { eurlex: Scale, un: Globe2, chemistry: Beaker };
 export default function AdminPage() {
   const [session, setSession] = useState<AdminSession | null>(null);
   const [data, setData] = useState<AdminData | null>(null);
-  const [projectId, setProjectId] = useState("");
+  const [selection, setSelection] = useState({ projectId: "", language: "" });
   const [tab, setTab] = useState<Tab>("documents");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -42,20 +43,18 @@ export default function AdminPage() {
   }, [refresh]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (!data?.projects.length) return;
-    if (!data.projects.some((item) => item.id === projectId)) setProjectId(data.projects[0].id);
-  }, [data, projectId]);
 
   async function action(payload: Record<string, unknown>) {
     return apiJson<Record<string, unknown>>("/api/admin", { method: "POST", headers: { "Content-Type": "application/json", "X-Annotation-Actor": session?.user?.id ?? "" }, body: JSON.stringify(payload) });
   }
 
-  async function exportAnnotations() {
+  async function exportAnnotations(language: Language | null) {
     if (!project) return;
     setExporting(true); setError("");
     try {
-      const response = await fetch(`/api/admin/export?projectId=${encodeURIComponent(project.id)}`, { cache: "no-store", credentials: "same-origin", headers: { "X-Annotation-Actor": session?.user?.id ?? "" } });
+      const params = new URLSearchParams({ projectId: project.id });
+      if (language) params.set("language", language);
+      const response = await fetch(`/api/admin/export?${params}`, { cache: "no-store", credentials: "same-origin", headers: { "X-Annotation-Actor": session?.user?.id ?? "" } });
       if (!response.ok) {
         const result = await response.json().catch(() => ({})) as { error?: string | { message?: string } };
         throw new Error(typeof result.error === "string" ? result.error : result.error?.message ?? "The export could not be created.");
@@ -63,14 +62,28 @@ export default function AdminPage() {
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `${project.id}-annotations-${new Date().toISOString().slice(0, 10)}.json`;
+      link.href = url; link.download = [project.id, language, `annotations-${new Date().toISOString().slice(0, 10)}.json`].filter(Boolean).join("-");
       document.body.appendChild(link); link.click(); link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) { setError(err instanceof Error ? err.message : "The export could not be created."); }
     finally { setExporting(false); }
   }
 
-  const project = data?.projects.find((item) => item.id === projectId) ?? data?.projects[0];
+  const project = data?.projects.find((item) => item.id === selection.projectId) ?? data?.projects[0];
+  const languageChoice = project?.id === selection.projectId ? selection.language : "";
+  const selectedLanguage = project?.languages.find((item) => item.code === languageChoice);
+  const unlabeledDocuments = project ? project.total - project.languages.reduce((sum, item) => sum + item.total, 0) : 0;
+  const unlabeledMembers = project ? project.members - project.languages.reduce((sum, item) => sum + item.members, 0) : 0;
+  const hasUnlabeled = !!project?.languages.length && (unlabeledDocuments > 0 || unlabeledMembers > 0);
+  const viewingUnlabeled = hasUnlabeled && languageChoice === "unlabeled";
+  const language = selectedLanguage?.code ?? null;
+  const assignment: AdminAssignment | null = project && (!project.languages.length || selectedLanguage || viewingUnlabeled) ? {
+    projectId: project.id, language,
+    label: viewingUnlabeled ? `${project.name} · Unlabeled` : assignmentName({ name: project.name, language }),
+    total: selectedLanguage?.total ?? unlabeledDocuments,
+    members: selectedLanguage?.members ?? unlabeledMembers,
+  } : null;
+  const assignmentKey = assignment ? JSON.stringify([assignment.projectId, assignment.language]) : "";
   const answerKey = data?.answerKeys.find((key) => key.domain === project?.domain);
   const allConfirmed = !!data && data.answerKeys.every((key) => key.confirmed);
 
@@ -83,10 +96,31 @@ export default function AdminPage() {
         <div className="admin-overview"><div><span className="admin-overview-icon"><Layers3 size={20} /></span><div><span>Projects</span><strong>{data.projects.length}</strong></div></div><div><span className="admin-overview-icon"><FileText size={20} /></span><div><span>Source documents</span><strong>{data.projects.reduce((sum, item) => sum + item.total, 0).toLocaleString()}</strong></div></div><div><span className="admin-overview-icon"><Users size={20} /></span><div><span>Assigned annotators</span><strong>{new Set(data.memberships.map((member) => member.email)).size}</strong></div></div><div><span className={`admin-overview-icon ${allConfirmed ? "" : "admin-pending-icon"}`}><BookOpen size={20} /></span><div><span>Qualification keys</span><strong>{data.answerKeys.filter((key) => key.confirmed).length}<small> / {data.answerKeys.length} confirmed</small></strong></div></div></div>
         {!data.projects.length && <div className="admin-empty"><FolderKanban size={28} /><h3>No projects yet</h3><p>Create the first project below, then import its dataset and assign annotators.</p></div>}
         <div className="admin-project-heading"><h2>Your projects</h2><span>Choose a project to manage</span></div>
-        <div className="admin-projects">{data.projects.map((item) => { const Icon = projectIcons[item.id as keyof typeof projectIcons] ?? FileText; const key = data.answerKeys.find((entry) => entry.domain === item.domain); return <button key={item.id} className={`admin-project ${project?.id === item.id ? "admin-project-selected" : ""}`} onClick={() => { setProjectId(item.id); setError(""); }} aria-pressed={project?.id === item.id}><span className={`admin-project-icon admin-project-${item.id}`}><Icon size={23} /></span><div><span className="admin-project-domain">{item.domain === "legal" ? "LEGAL" : "CHEMISTRY"}</span><h3>{item.name}</h3><p>{item.total} documents <span>·</span> {item.members} annotators</p><span className={`admin-project-status ${key?.confirmed ? "admin-status-ready" : ""}`}>{key?.confirmed ? <><Check size={12} /> Qualification ready</> : <><span className="admin-status-dot" /> Answer key needs review</>}</span></div><ChevronRight size={17} className="admin-project-arrow" /></button>; })}</div>
+        <div className="admin-projects">{data.projects.map((item) => { const Icon = projectIcons[item.id as keyof typeof projectIcons] ?? FileText; const key = data.answerKeys.find((entry) => entry.domain === item.domain); return <button key={item.id} className={`admin-project ${project?.id === item.id ? "admin-project-selected" : ""}`} onClick={() => { if (item.id !== project?.id) setSelection({ projectId: item.id, language: "" }); setError(""); }} aria-pressed={project?.id === item.id}><span className={`admin-project-icon admin-project-${item.id}`}><Icon size={23} /></span><div><span className="admin-project-domain">{item.domain === "legal" ? "LEGAL" : "CHEMISTRY"}</span><h3>{item.name}</h3><p>{item.total} documents <span>·</span> {item.members} annotators</p><span className={`admin-project-status ${key?.confirmed ? "admin-status-ready" : ""}`}>{key?.confirmed ? <><Check size={12} /> Qualification ready</> : <><span className="admin-status-dot" /> Answer key needs review</>}</span></div><ChevronRight size={17} className="admin-project-arrow" /></button>; })}</div>
         {!project && <div className="admin-project-workspace"><div className="admin-main-panel"><ProjectsAdmin projects={data.projects} action={action} refresh={refresh} /></div></div>}
-        {project && <div className="admin-project-workspace"><div className="admin-workspace-bar"><nav className="admin-tabs" aria-label="Project administration">{([{ id: "documents", label: "Documents", icon: FileText }, { id: "projects", label: "Projects", icon: FolderKanban }, { id: "annotators", label: "Annotators", icon: Users }, { id: "administrators", label: "Administrators", icon: ShieldCheck }, { id: "guidelines", label: "Guidelines", icon: BookOpen }, { id: "qualification", label: "Qualification", icon: ShieldCheck }, { id: "activity", label: "Activity", icon: History }] as const).map((item) => <button key={item.id} className={tab === item.id ? "admin-tab-active" : ""} onClick={() => setTab(item.id)} aria-current={tab === item.id ? "page" : undefined}><item.icon size={16} />{item.label}</button>)}</nav><button className="admin-button admin-secondary admin-export" onClick={() => void exportAnnotations()} disabled={exporting}><Download size={15} />{exporting ? "Preparing…" : "Export annotations"}</button></div>
-          <div className="admin-workspace-layout"><div className="admin-main-panel">{tab === "documents" && <><DocumentImport key={project.id} project={project} action={action} refresh={refresh} /><DocumentsList project={project} action={action} refresh={refresh} /></>}{tab === "projects" && <ProjectsAdmin projects={data.projects} action={action} refresh={refresh} />}{tab === "annotators" && <Members key={project.id} project={project} memberships={data.memberships} accounts={data.accounts} action={action} refresh={refresh} />}{tab === "administrators" && <WorkspaceAdmin accounts={data.accounts} action={action} refresh={refresh} />}{tab === "guidelines" && <><GuidelineManager domain="legal" actorId={session?.user?.id ?? ""} /><GuidelineManager domain="chemistry" actorId={session?.user?.id ?? ""} /></>}{tab === "qualification" && answerKey && <AnswerKeyReview key={`${answerKey.domain}-${answerKey.version}`} answerKey={answerKey} questions={data.questions} action={action} refresh={refresh} />}{tab === "activity" && <AuditLog />}</div><aside className="admin-sidebar"><section className="admin-side-card"><span className="admin-side-icon"><Settings2 size={19} /></span><h3>Ready for annotation?</h3><p>Complete these three steps for {project.name}.</p><ol className="admin-readiness"><li className={project.total ? "admin-complete" : ""}><span>{project.total ? <Check size={12} /> : "1"}</span><button onClick={() => setTab("documents")}>Import source documents</button></li><li className={project.members ? "admin-complete" : ""}><span>{project.members ? <Check size={12} /> : "2"}</span><button onClick={() => setTab("annotators")}>Assign your annotators</button></li><li className={answerKey?.confirmed ? "admin-complete" : ""}><span>{answerKey?.confirmed ? <Check size={12} /> : "3"}</span><button onClick={() => setTab("qualification")}>Confirm the answer key</button></li></ol></section><section className="admin-side-note"><ShieldCheck size={21} /><h3>Independent by design</h3><p>Each annotator belongs to one project and sees only their own work. Administrators manage all projects and can export submitted annotations without an annotator assignment.</p><p>Every document is saved when the annotator presses Submit.</p></section></aside></div>
+        {project && <div className="admin-project-workspace">
+          <div className="admin-assignment-controls">
+            {project.languages.length > 0 && <label className="admin-field-label" htmlFor="project-language">Document language
+              <select id="project-language" value={languageChoice} onChange={(event) => { setSelection({ projectId: project.id, language: event.target.value }); setError(""); }}>
+                <option value="">Choose a language</option>
+                {project.languages.map(({ code }) => <option key={code} value={code}>{languageNames[code]}</option>)}
+                {hasUnlabeled && <option value="unlabeled">Unlabeled (existing work)</option>}
+              </select>
+            </label>}
+            {assignment && <span className="admin-footnote">{assignment.total} documents · {assignment.members} annotators</span>}
+            <div className="admin-assignment-exports">
+              {language && <button className="admin-button admin-secondary" onClick={() => void exportAnnotations(language)} disabled={exporting}><Download size={15} />Export {languageNames[language]}</button>}
+              <button className="admin-button admin-secondary" onClick={() => void exportAnnotations(null)} disabled={exporting}><Download size={15} />{exporting ? "Preparing export…" : "Export whole project"}</button>
+            </div>
+          </div>
+          <div className="admin-workspace-bar"><nav className="admin-tabs" aria-label="Project administration">{([{ id: "documents", label: "Documents", icon: FileText }, { id: "projects", label: "Projects", icon: FolderKanban }, { id: "annotators", label: "Annotators", icon: Users }, { id: "administrators", label: "Administrators", icon: ShieldCheck }, { id: "guidelines", label: "Guidelines", icon: BookOpen }, { id: "qualification", label: "Qualification", icon: ShieldCheck }, { id: "activity", label: "Activity", icon: History }] as const).map((item) => <button key={item.id} className={tab === item.id ? "admin-tab-active" : ""} onClick={() => setTab(item.id)} aria-current={tab === item.id ? "page" : undefined}><item.icon size={16} />{item.label}</button>)}</nav></div>
+          <div className="admin-workspace-layout"><div className="admin-main-panel">
+            {!assignment && (tab === "documents" || tab === "annotators") && <section className="admin-card"><p>Choose a document language above to manage {tab} for {project.name}.</p></section>}
+            {tab === "documents" && assignment && <div className="admin-assignment-documents" key={assignmentKey}>
+              {!viewingUnlabeled && <DocumentImport assignment={assignment} action={action} refresh={refresh} />}
+              <DocumentsList assignment={assignment} action={action} refresh={refresh} />
+            </div>}
+            {tab === "projects" && <ProjectsAdmin projects={data.projects} action={action} refresh={refresh} />}{tab === "annotators" && assignment && <Members key={assignmentKey} assignment={assignment} allowNewAssignments={!viewingUnlabeled} memberships={data.memberships} accounts={data.accounts} action={action} refresh={refresh} />}{tab === "administrators" && <WorkspaceAdmin accounts={data.accounts} action={action} refresh={refresh} />}{tab === "guidelines" && <><GuidelineManager domain="legal" actorId={session?.user?.id ?? ""} /><GuidelineManager domain="chemistry" actorId={session?.user?.id ?? ""} /></>}{tab === "qualification" && answerKey && <AnswerKeyReview key={`${answerKey.domain}-${answerKey.version}`} answerKey={answerKey} questions={data.questions} action={action} refresh={refresh} />}{tab === "activity" && <AuditLog />}</div><aside className="admin-sidebar"><section className="admin-side-card"><span className="admin-side-icon"><Settings2 size={19} /></span><h3>Ready for annotation?</h3><p>Complete these three steps for {assignment?.label ?? project.name}.</p><ol className="admin-readiness"><li className={(assignment?.total ?? project.total) ? "admin-complete" : ""}><span>{(assignment?.total ?? project.total) ? <Check size={12} /> : "1"}</span><button onClick={() => setTab("documents")}>Import source documents</button></li><li className={(assignment?.members ?? project.members) ? "admin-complete" : ""}><span>{(assignment?.members ?? project.members) ? <Check size={12} /> : "2"}</span><button onClick={() => setTab("annotators")}>Assign your annotators</button></li><li className={answerKey?.confirmed ? "admin-complete" : ""}><span>{answerKey?.confirmed ? <Check size={12} /> : "3"}</span><button onClick={() => setTab("qualification")}>Confirm the answer key</button></li></ol></section><section className="admin-side-note"><ShieldCheck size={21} /><h3>Independent by design</h3><p>Each annotator sees the documents in their assignment and their own reviews. Administrators manage all projects and can export submitted annotations without an annotator assignment.</p><p>Every document is saved when the annotator presses Submit.</p></section></aside></div>
         </div>}
       </>}
       <footer className="admin-footer"><span><LockKeyhole size={13} /> Restricted administrator workspace</span><span>Annotation Studio</span></footer>

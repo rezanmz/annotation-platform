@@ -23,3 +23,17 @@
   .admin-project{display:flex;gap:12px;align-items:flex-start}
   .admin-project-icon{margin-bottom:0}
 }
+
+.admin-assignment-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-bottom: 18px;
+}
+.admin-assignment-controls select { min-width: 170px; }
+.admin-assignment-exports { display: flex; flex-wrap: wrap; gap: 8px; margin-inline-start: auto; }
+.admin-assignment-documents { display: grid; gap: 20px; }
+@media (max-width: 700px) {
+  .admin-assignment-exports { width: 100%; margin-inline-start: 0; }
+}

@@ -78,9 +78,9 @@ async function setup(path, { acknowledge = true } = {}) {
   const db = new TestDatabase(path);
   for (const actor of Object.values(actors)) seedAccount(db, actor);
   const admin = new AnnotationService(db, actors.admin);
-  for (const [projectId, email] of [['eurlex', actors.alice.email], ['eurlex', actors.bob.email], ['chemistry', actors.eve.email]]) await admin.adminAction({ action: 'addMember', projectId, email });
-  await admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', documents: [document()] });
-  await admin.adminAction({ action: 'importDocuments', projectId: 'chemistry', documents: [document()] });
+  for (const [projectId, email] of [['eurlex', actors.alice.email], ['eurlex', actors.bob.email], ['chemistry', actors.eve.email]]) await admin.adminAction({ action: 'addMember', projectId, language: 'en', email });
+  await admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document()] });
+  await admin.adminAction({ action: 'importDocuments', projectId: 'chemistry', language: 'en', documents: [document()] });
   for (const domain of ['legal', 'chemistry']) await admin.adminAction({ action: 'confirmKey', domain, answers: keys, version: 'v1' });
   const alice = new AnnotationService(db, actors.alice), bob = new AnnotationService(db, actors.bob), eve = new AnnotationService(db, actors.eve);
   await alice.claimInvitations(); await bob.claimInvitations(); await eve.claimInvitations();
@@ -238,7 +238,7 @@ test('revoked membership prevents reads, submissions and receipt replay without 
   const { db, alice, admin } = await setup();
   try {
     await alice.qualify('eurlex', { answers }); await alice.submit('eurlex', 'doc-1', input());
-    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', email: actors.alice.email });
+    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
     await assert.rejects(alice.document('eurlex', 'doc-1'), expectStatus(404));
     await assert.rejects(alice.submit('eurlex', 'doc-1', input()), expectStatus(404));
     assert.equal((await admin.export('eurlex')).annotations.length, 1);
@@ -276,7 +276,7 @@ test('answer key revisions preserve permanent qualification and original submiss
     assert.equal((await alice.project('eurlex')).qualification.version, 'v1');
     assert.equal((await alice.document('eurlex', 'doc-1')).source, document().source);
     assert.ok((await alice.submit('eurlex', 'doc-1', input())).id, 'Committed receipt retry still works after key revision.');
-    await admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', documents: [document('doc-2', 'A second source after the key revision.')] });
+    await admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document('doc-2', 'A second source after the key revision.')] });
     assert.ok((await alice.submit('eurlex', 'doc-2', input('second-submission'))).id);
     await assert.rejects(admin.adminAction({ action: 'confirmKey', domain: 'legal', answers: keys, version: 'v1' }), expectStatus(409));
     const exported = await admin.export('eurlex');
@@ -317,9 +317,9 @@ test('stable user identity retains assignment after an identity-provider email u
 test('CSV import is atomic and repeated content with changed IDs cannot duplicate documents', async () => {
   const { db, admin } = await setup();
   try {
-    await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', documents: [document('doc-2', 'A new source'), document('new-id')] }), expectStatus(409));
+    await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document('doc-2', 'A new source'), document('new-id')] }), expectStatus(409));
     assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM documents WHERE project_id = 'eurlex'").get().n, 1);
-    await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', documents: [document('doc-2', 'Same source'), document('doc-3', 'Same source')] }), expectStatus(409));
+    await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document('doc-2', 'Same source'), document('doc-3', 'Same source')] }), expectStatus(409));
   } finally { db.close(); }
 });
 
@@ -379,7 +379,7 @@ test('guideline acknowledgement is idempotent and isolated by annotator and proj
   try {
     const unActor = { id: 'un-reader', email: 'un-reader@example.test', name: 'UN Reader', isAdmin: false };
     seedAccount(db, unActor);
-    await admin.adminAction({ action: 'addMember', projectId: 'un', email: unActor.email });
+    await admin.adminAction({ action: 'addMember', projectId: 'un', language: 'en', email: unActor.email });
     const unReader = new AnnotationService(db, unActor);
     await assert.rejects(alice.acknowledgeGuideline('chemistry', { acknowledged: true }), expectStatus(404));
     const first = await alice.acknowledgeGuideline('eurlex', { acknowledged: true });
@@ -463,13 +463,13 @@ test('removing and restoring membership preserves a past pass but never grants a
   try {
     await alice.qualify('eurlex', { answers });
     const original = (await alice.project('eurlex')).qualification;
-    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', email: actors.alice.email });
+    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
     await assert.rejects(alice.project('eurlex'), expectStatus(404));
     await assert.rejects(alice.document('eurlex', 'doc-1'), expectStatus(404));
     await assert.rejects(alice.submit('eurlex', 'doc-1', input()), expectStatus(404));
     await assert.rejects(alice.qualify('eurlex', { answers }), expectStatus(404));
     await assert.rejects(alice.acknowledgeGuideline('eurlex', { acknowledged: true }), expectStatus(404));
-    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', email: actors.alice.email });
+    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
     await alice.claimInvitations();
     assert.deepEqual((await alice.project('eurlex')).qualification, original);
     assert.equal((await alice.document('eurlex', 'doc-1')).source, document().source);
@@ -497,8 +497,8 @@ test('one project accepts many annotators but one annotator cannot be assigned t
   const { db, admin, alice } = await setup();
   try {
     assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM memberships WHERE project_id='eurlex'").get().n, 2);
-    await assert.rejects(admin.adminAction({ action: 'addMember', projectId: 'un', email: actors.alice.email }), expectStatus(409));
-    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', email: actors.alice.email });
+    await assert.rejects(admin.adminAction({ action: 'addMember', projectId: 'un', language: 'en', email: actors.alice.email }), expectStatus(409));
+    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
     assert.deepEqual((await alice.sessionProjects()).map((project) => project.id), ['eurlex']);
     assert.throws(() => db.sqlite.prepare('INSERT INTO memberships(project_id,email,user_id,created_at) VALUES(?,?,?,?)').run('un', actors.alice.email, 'another-id', new Date().toISOString()), /UNIQUE/);
     assert.throws(() => db.sqlite.prepare('INSERT INTO memberships(project_id,email,user_id,created_at) VALUES(?,?,?,?)').run('un', 'different@example.test', actors.alice.id, new Date().toISOString()), /UNIQUE/);
@@ -511,7 +511,7 @@ test('concurrent project assignments have exactly one winner and never silently 
   try {
     const actor = { id: 'available', name: 'Available', email: 'available@example.test', isAdmin: false };
     seedAccount(db, actor);
-    const outcomes = await Promise.allSettled(['eurlex', 'un', 'chemistry'].map((projectId) => admin.adminAction({ action: 'addMember', projectId, email: actor.email })));
+    const outcomes = await Promise.allSettled(['eurlex', 'un', 'chemistry'].map((projectId) => admin.adminAction({ action: 'addMember', projectId, language: 'en', email: actor.email })));
     assert.equal(outcomes.filter((outcome) => outcome.status === 'fulfilled').length, 1);
     assert.equal(outcomes.filter((outcome) => outcome.status === 'rejected' && outcome.reason.status === 409).length, 2);
     assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM memberships WHERE user_id=?').get(actor.id).n, 1);
@@ -540,7 +540,7 @@ test('legacy multiple assignments fail closed for project lists, content, qualif
 test('administrator creates an individual annotator account atomically and cannot elevate it via submitted fields', async () => {
   const { db, admin, alice } = await setup();
   try {
-    const payload = { action: 'createAnnotator', projectId: 'un', name: 'New Annotator', email: 'NEW@example.test', password: 'Temporary passphrase 123!', role: 'admin', isAdmin: true, mustChangePassword: true };
+    const payload = { action: 'createAnnotator', projectId: 'un', language: 'en', name: 'New Annotator', email: 'NEW@example.test', password: 'Temporary passphrase 123!', role: 'admin', isAdmin: true, mustChangePassword: true };
     await assert.rejects(alice.adminAction(payload), expectStatus(403));
     const created = await admin.adminAction(payload);
     assert.equal(created.account.role, 'annotator');
@@ -571,7 +571,7 @@ test('account creation rolls back when an existing legacy assignment would viola
   const { db, admin } = await setup();
   try {
     db.sqlite.prepare('INSERT INTO memberships(project_id,email,user_id,created_at) VALUES(?,?,NULL,?)').run('eurlex', 'pending@example.test', new Date().toISOString());
-    await assert.rejects(admin.adminAction({ action: 'createAnnotator', projectId: 'un', name: 'Pending', email: 'pending@example.test', password: 'Temporary passphrase 123!' }), expectStatus(409));
+    await assert.rejects(admin.adminAction({ action: 'createAnnotator', projectId: 'un', language: 'en', name: 'Pending', email: 'pending@example.test', password: 'Temporary passphrase 123!' }), expectStatus(409));
     assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM local_accounts WHERE email=?').get('pending@example.test').n, 0);
     assert.equal(db.sqlite.prepare('SELECT project_id FROM memberships WHERE email=?').get('pending@example.test').project_id, 'eurlex');
   } finally { db.close(); }
@@ -581,7 +581,7 @@ test('annotator controls cannot assign, reset or disable administrator accounts'
   const { db, admin, alice } = await setup();
   try {
     for (const payload of [
-      { action: 'addMember', projectId: 'eurlex', email: actors.admin.email },
+      { action: 'addMember', projectId: 'eurlex', language: 'en', email: actors.admin.email },
       { action: 'resetAnnotatorPassword', email: actors.admin.email, password: 'Replacement secret 123!' },
       { action: 'setAnnotatorActive', email: actors.admin.email, active: false },
     ]) await assert.rejects(admin.adminAction(payload), expectStatus(403));
@@ -626,9 +626,9 @@ test('moving an annotator requires explicit removal, preserves past work, and re
   try {
     await alice.qualify('eurlex', { answers });
     await alice.submit('eurlex', 'doc-1', input());
-    await assert.rejects(admin.adminAction({ action: 'addMember', projectId: 'un', email: actors.alice.email }), expectStatus(409));
-    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', email: actors.alice.email });
-    await admin.adminAction({ action: 'addMember', projectId: 'un', email: actors.alice.email });
+    await assert.rejects(admin.adminAction({ action: 'addMember', projectId: 'un', language: 'en', email: actors.alice.email }), expectStatus(409));
+    await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
+    await admin.adminAction({ action: 'addMember', projectId: 'un', language: 'en', email: actors.alice.email });
     assert.deepEqual((await alice.sessionProjects()).map((project) => project.id), ['un']);
     assert.equal((await alice.project('un')).qualification.passed, false);
     assert.equal((await alice.project('un')).qualification.guidelineRead, false);
@@ -636,9 +636,132 @@ test('moving an annotator requires explicit removal, preserves past work, and re
     const historical = await admin.export('eurlex');
     assert.equal(historical.annotations.length, 1);
     assert.equal(historical.annotations[0].userId, 'alice');
-    await admin.adminAction({ action: 'removeMember', projectId: 'un', email: actors.alice.email });
-    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', email: actors.alice.email });
+    await admin.adminAction({ action: 'removeMember', projectId: 'un', language: 'en', email: actors.alice.email });
+    await admin.adminAction({ action: 'addMember', projectId: 'eurlex', language: 'en', email: actors.alice.email });
     assert.equal((await alice.project('eurlex')).qualification.passed, true);
     assert.ok((await alice.document('eurlex', 'doc-1')).submission.id);
+  } finally { db.close(); }
+});
+
+test('the three projects expose exactly their configured languages and require a supported language for new work', async () => {
+  const { db, admin } = await setup();
+  try {
+    const { projects } = await admin.adminOverview();
+    assert.deepEqual(Object.fromEntries(projects.map((p) => [p.id, p.languages.map((l) => l.code)])), {
+      eurlex: ['en', 'fr', 'de', 'es'],
+      un: ['ar', 'zh', 'en', 'fr', 'ru', 'es'],
+      chemistry: ['zh', 'en', 'fr', 'de', 'ja', 'ru', 'es'],
+    });
+    for (const language of [undefined, 'de']) {
+      for (const action of ['createAnnotator', 'addMember', 'importDocuments']) {
+        await assert.rejects(admin.adminAction({ action, projectId: 'un', language, documents: [document()], name: 'Reviewer', email: 'reviewer@example.test', password: 'Test account password' }), expectStatus(400));
+      }
+    }
+    assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM local_accounts WHERE email = 'reviewer@example.test'").get().n, 0);
+    assert.deepEqual((await admin.listDocuments('un', 'fr')).documents, []);
+    await assert.rejects(admin.export('un', 'de'), expectStatus(400));
+  } finally { db.close(); }
+});
+
+test('language assignments isolate reviews, progress, direct links, receipt retries and exports after reassignment', async () => {
+  const { db, admin, alice, bob } = await setup();
+  const french = { projectId: 'un', language: 'fr' };
+  const arabic = { projectId: 'un', language: 'ar' };
+  try {
+    for (const actor of [actors.alice, actors.bob]) {
+      await admin.adminAction({ action: 'removeMember', projectId: 'eurlex', language: 'en', email: actor.email });
+      await admin.adminAction({ action: 'addMember', ...french, email: actor.email });
+    }
+    await assert.rejects(admin.adminAction({ action: 'addMember', ...arabic, email: actors.alice.email }), expectStatus(409));
+    await admin.adminAction({ action: 'importDocuments', ...french, documents: [document('fr-1', 'Le comité a voté.'), document('fr-2', 'Le comité se réunit demain.')] });
+    await admin.adminAction({ action: 'importDocuments', ...arabic, documents: [document('ar-1', 'اجتمعت اللجنة اليوم.')] });
+    await admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'fr', documents: [document('other-fr')] });
+    assert.equal((await alice.sessionProjects())[0].language, 'fr');
+    assert.equal((await alice.sessionProjects())[0].total, 2);
+    for (const reviewer of [alice, bob]) {
+      assert.deepEqual((await reviewer.project('un')).documents, []);
+      await reviewer.acknowledgeGuideline('un', { acknowledged: true });
+      await reviewer.qualify('un', { answers });
+    }
+    assert.deepEqual((await alice.project('un')).documents.map((d) => d.id), ['fr-1', 'fr-2']);
+    await assert.rejects(alice.document('un', 'ar-1'), expectStatus(404));
+    await assert.rejects(alice.document('eurlex', 'other-fr'), expectStatus(404));
+    await assert.rejects(alice.submit('un', 'ar-1', { ...input(), language: 'ar' }), expectStatus(404));
+    await alice.submit('un', 'fr-1', input('alice-fr'));
+    assert.equal((await bob.document('un', 'fr-1')).submission, null);
+    assert.equal((await bob.sessionProjects())[0].submitted, 0);
+    await bob.submit('un', 'fr-1', input('bob-fr'));
+
+    await admin.adminAction({ action: 'removeMember', ...french, email: actors.alice.email });
+    await admin.adminAction({ action: 'addMember', ...arabic, email: actors.alice.email });
+    const [assigned] = await alice.sessionProjects();
+    assert.deepEqual([assigned.language, assigned.total, assigned.submitted, assigned.qualified], ['ar', 1, 0, true]);
+    await assert.rejects(alice.document('un', 'fr-1'), expectStatus(404));
+    await assert.rejects(alice.submit('un', 'fr-1', input('alice-fr')), expectStatus(404));
+    await assert.rejects(alice.submit('un', 'fr-2', input('old-tab')), expectStatus(404));
+    await assert.rejects(alice.submit('un', 'ar-1', { ...input('stale-language'), expectedLanguage: 'fr' }), expectStatus(409));
+    assert.equal((await alice.document('un', 'ar-1')).language, 'ar');
+    await alice.submit('un', 'ar-1', input('alice-ar'));
+
+    const history = (await admin.export('un')).annotations;
+    assert.deepEqual(history.map((row) => row.language).sort(), ['ar', 'fr', 'fr']);
+    assert.deepEqual((await admin.export('un', 'fr')).annotations.map((row) => row.documentId), ['fr-1', 'fr-1']);
+    assert.deepEqual((await admin.export('un', 'ar')).annotations.map((row) => row.documentId), ['ar-1']);
+  } finally { db.close(); }
+});
+
+test('the save statement rechecks the language if an administrator reassigns the reviewer during a submission', async () => {
+  const { db, alice } = await setup();
+  try {
+    await alice.qualify('eurlex', { answers });
+    db.beforeSave = () => db.sqlite.prepare("UPDATE memberships SET language = 'fr' WHERE user_id = ?").run(actors.alice.id);
+    await assert.rejects(alice.submit('eurlex', 'doc-1', input()), expectStatus(409));
+    assert.equal(db.sqlite.prepare('SELECT count(*) AS n FROM submissions').get().n, 0);
+  } finally { db.close(); }
+});
+
+test('duplicate detection, administrative document removal and membership removal respect the selected language', async () => {
+  const { db, admin, alice } = await setup();
+  try {
+    const french = { projectId: 'eurlex', language: 'fr' };
+    await admin.adminAction({ action: 'importDocuments', ...french, documents: [document('french-copy')] });
+    assert.deepEqual((await admin.listDocuments('eurlex')).documents.map((d) => d.language).sort(), ['en', 'fr']);
+    await assert.rejects(admin.adminAction({ action: 'importDocuments', ...french, documents: [document('duplicate')] }), expectStatus(409));
+    await assert.rejects(admin.adminAction({ action: 'deleteDocument', ...french, documentId: 'doc-1' }), expectStatus(404));
+    await admin.adminAction({ action: 'removeMember', ...french, email: actors.alice.email });
+    assert.equal((await alice.sessionProjects())[0].language, 'en');
+    assert.equal((await admin.adminAction({ action: 'deleteUnsubmittedDocuments', ...french })).deleted, 1);
+    const english = (await admin.listDocuments('eurlex', 'en')).documents;
+    assert.deepEqual(english.map((d) => d.id), ['doc-1']);
+    assert.equal((await admin.listDocuments('eurlex', 'fr')).documents.length, 0);
+    const { projects } = await admin.adminOverview();
+    assert.deepEqual(projects.find((p) => p.id === 'eurlex').languages.find((l) => l.code === 'en'), { code: 'en', total: 1, members: 2 });
+  } finally { db.close(); }
+});
+
+test('upgrading preserves unlabeled work and supports project-only imports and assignments on custom projects', async () => {
+  const db = new TestDatabase(':memory:', false);
+  try {
+    const upgrade = migrations.indexOf('0008_project_languages.sql');
+    for (const sql of migrationSQL.slice(0, upgrade)) db.sqlite.exec(sql);
+    seedAccount(db, actors.alice);
+    db.sqlite.exec(`INSERT INTO memberships VALUES ('un', 'alice@example.test', 'alice', '2026-01-01');
+      INSERT INTO documents (id, project_id, title, source, question, answer, content_hash, created_at) VALUES ('old', 'un', 'Title', 'Source', 'Question', 'Answer', 'hash', '2026-01-01');
+      INSERT INTO qualifications VALUES ('un', 'alice', 'v1', '2026-01-01');
+      INSERT INTO submissions VALUES ('saved', 'un', 'old', 'alice', 'old-request', '{"ratings":[]}', 'v1', '2026-01-01');`);
+    for (const sql of migrationSQL.slice(upgrade)) db.sqlite.exec(sql);
+    const admin = new AnnotationService(db, actors.admin);
+    const alice = new AnnotationService(db, actors.alice);
+    assert.equal((await alice.document('un', 'old')).submission.id, 'saved');
+    assert.equal((await admin.export('un')).annotations[0].language, null);
+    assert.deepEqual((await admin.export('un', 'en')).annotations, []);
+    await admin.adminAction({ action: 'removeMember', projectId: 'un', language: null, email: actors.alice.email });
+    await admin.adminAction({ action: 'createProject', id: 'custom', domain: 'legal', name: 'Custom project' });
+    await admin.adminAction({ action: 'addMember', projectId: 'custom', email: actors.alice.email });
+    await admin.adminAction({ action: 'importDocuments', projectId: 'custom', documents: [document()] });
+    await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'custom', documents: [document('duplicate')] }), expectStatus(409));
+    const [assigned] = await alice.sessionProjects();
+    assert.deepEqual([assigned.id, assigned.language, assigned.total], ['custom', null, 1]);
+    assert.deepEqual(db.sqlite.prepare('PRAGMA foreign_key_check').all(), []);
   } finally { db.close(); }
 });

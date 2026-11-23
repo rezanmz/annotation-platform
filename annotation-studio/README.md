@@ -45,8 +45,12 @@ server (under Litestream when configured). Migrations are idempotent. The health
 ## Accounts and access
 
 - Each person has an individual account. Roles come from the database; there is no public signup.
-- The administrator has no project; annotators belong to exactly one project, and a project can have
-  many annotators. Every server route rechecks membership and identity.
+- Each annotator has one active assignment. For EUR-Lex, UN, and Chemistry, select a project and a
+  document language in `/admin`, then create or assign accounts under **Annotators**. Several
+  reviewers can share an assignment and each sees only their own reviews.
+- Under **Documents**, choose the destination language and import one UTF-8 CSV per language with
+  the headers `document,question,answer`. Exports can cover that language or the whole project.
+  Qualification is per annotator and project. Custom projects support project-only assignments.
 - Annotators can change their own password at `/account/password`; this revokes their other sessions.
   `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts, resets
   passwords, disables/reactivates, removes project access, erases an identity (keeping submitted

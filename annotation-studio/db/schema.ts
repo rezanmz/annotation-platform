@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, blob, primaryKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { sqliteTable, text, integer, blob, primaryKey, foreignKey, uniqueIndex, index } from "drizzle-orm/sqlite-core";
 
 export const localAccounts = sqliteTable("local_accounts", {
   id: text("id").primaryKey(), email: text("email").notNull(), name: text("name").notNull(), passwordHash: text("password_hash").notNull(),
@@ -17,6 +18,10 @@ export const authRateLimits = sqliteTable("auth_rate_limits", {
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(), name: text("name").notNull(), domain: text("domain", { enum: ["legal", "chemistry"] }).notNull(), description: text("description").notNull(), createdAt: text("created_at").notNull(),
 });
+export const projectLanguages = sqliteTable("project_languages", {
+  projectId: text("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  language: text("language").notNull(),
+}, (t) => [primaryKey({ columns: [t.projectId, t.language] })]);
 
 export const guidelines = sqliteTable("guidelines", {
   domain: text("domain").primaryKey(), bytes: blob("bytes").notNull(), sha256: text("sha256").notNull(), updatedAt: text("updated_at").notNull(),
@@ -27,11 +32,19 @@ export const auditLog = sqliteTable("audit_log", {
 }, (t) => [index("audit_log_created_at").on(t.createdAt)]);
 
 export const memberships = sqliteTable("memberships", {
-  projectId: text("project_id").notNull(), email: text("email").notNull(), userId: text("user_id"), createdAt: text("created_at").notNull(),
-}, (t) => [primaryKey({ columns: [t.projectId, t.email] }), uniqueIndex("one_project_per_email").on(t.email), uniqueIndex("one_project_per_user").on(t.userId)]);
+  projectId: text("project_id").notNull(), language: text("language"), email: text("email").notNull(), userId: text("user_id"), createdAt: text("created_at").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.email] }), uniqueIndex("one_project_per_email").on(t.email), uniqueIndex("one_project_per_user").on(t.userId),
+  foreignKey({ columns: [t.projectId, t.language], foreignColumns: [projectLanguages.projectId, projectLanguages.language] }),
+]);
 export const documents = sqliteTable("documents", {
-  projectId: text("project_id").notNull(), id: text("id").notNull(), title: text("title").notNull(), source: text("source").notNull(), question: text("question").notNull(), answer: text("answer").notNull(), contentHash: text("content_hash").notNull(), createdAt: text("created_at").notNull(),
-}, (t) => [primaryKey({ columns: [t.projectId, t.id] }), uniqueIndex("unique_document_content").on(t.projectId, t.contentHash)]);
+  projectId: text("project_id").notNull(), language: text("language"), id: text("id").notNull(), title: text("title").notNull(), source: text("source").notNull(), question: text("question").notNull(), answer: text("answer").notNull(), contentHash: text("content_hash").notNull(), createdAt: text("created_at").notNull(),
+}, (t) => [
+  primaryKey({ columns: [t.projectId, t.id] }),
+  foreignKey({ columns: [t.projectId, t.language], foreignColumns: [projectLanguages.projectId, projectLanguages.language] }),
+  uniqueIndex("unique_document_language_content").on(t.projectId, t.language, t.contentHash),
+  uniqueIndex("unique_document_content").on(t.projectId, t.contentHash).where(sql`${t.language} IS NULL`),
+]);
 export const answerKeys = sqliteTable("answer_keys", {
   domain: text("domain").primaryKey(), version: text("version").notNull(), answers: text("answers").notNull(), confirmedBy: text("confirmed_by").notNull(), confirmedAt: text("confirmed_at").notNull(),
 });
