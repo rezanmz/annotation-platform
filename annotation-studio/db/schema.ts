@@ -39,6 +39,7 @@ export const memberships = sqliteTable("memberships", {
 ]);
 export const documents = sqliteTable("documents", {
   projectId: text("project_id").notNull(), language: text("language"), id: text("id").notNull(), title: text("title").notNull(), source: text("source").notNull(), question: text("question").notNull(), answer: text("answer").notNull(), contentHash: text("content_hash").notNull(), createdAt: text("created_at").notNull(),
+  qaId: text("qa_id"),
 }, (t) => [
   primaryKey({ columns: [t.projectId, t.id] }),
   foreignKey({ columns: [t.projectId, t.language], foreignColumns: [projectLanguages.projectId, projectLanguages.language] }),

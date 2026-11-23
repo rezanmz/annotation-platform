@@ -31,7 +31,8 @@ function requireAdmin(actor: Actor) { if (!actor.isAdmin) throw new ApiError(403
 const singleAssignment = "(SELECT count(*) FROM memberships other WHERE other.user_id = m.user_id OR lower(other.email) = lower(m.email)) = 1";
 const membershipGuard = `EXISTS (SELECT 1 FROM memberships m WHERE m.project_id = ? AND m.user_id = ? AND ${singleAssignment})`;
 // IS also matches the NULL language used by project-only assignments.
-const assignedDocuments = `SELECT d.* FROM documents d JOIN memberships m ON m.project_id = d.project_id AND m.language IS d.language
+const assignedDocuments = `SELECT d.project_id, d.language, d.id, d.title, d.source, d.question, d.answer, d.created_at
+  FROM documents d JOIN memberships m ON m.project_id = d.project_id AND m.language IS d.language
   WHERE m.user_id = ? AND m.project_id = ? AND m.language IS ? AND ${singleAssignment}`;
 export class AnnotationService {
   constructor(private db: Database, private actor: Actor) {}
@@ -475,6 +476,8 @@ export class AnnotationService {
     for (const entry of input.documents) {
       const item = object(entry);
       const id = validId(item.id, "Document ID");
+      const qaId = item.qa_id ?? null;
+      if (qaId !== null && typeof qaId !== "string") throw new ApiError(400, "qa_id must be text.");
       const title = string(item.title, "Document title", 500);
       const source = string(item.source, "Document text", 200000);
       const question = string(item.question, "Question", 20000);
@@ -483,7 +486,7 @@ export class AnnotationService {
       const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
       if (ids.has(id) || hashes.has(hash)) throw new ApiError(409, "The import contains duplicate documents. No documents were imported.");
       ids.add(id); hashes.add(hash);
-      statements.push(this.db.prepare("INSERT INTO documents (project_id, language, id, title, source, question, answer, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(project.id, project.language, id, title, source, question, answer, hash, now));
+      statements.push(this.db.prepare("INSERT INTO documents (project_id, language, id, qa_id, title, source, question, answer, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(project.id, project.language, id, qaId?.trim() ? qaId : null, title, source, question, answer, hash, now));
     }
     try { await this.db.batch(statements); }
     catch (error) {
@@ -496,7 +499,13 @@ export class AnnotationService {
   async export(projectId: string, language?: string | null) {
     requireAdmin(this.actor);
     const project = language == null ? await projectById(this.db, projectId) : await this.projectScope(projectId, language);
-    const rows = await this.db.prepare("SELECT s.id, s.project_id AS projectId, s.document_id AS documentId, s.user_id AS userId, s.request_id AS requestId, s.qualification_version AS qualificationVersion, (SELECT q.passed_at FROM qualifications q WHERE q.project_id = s.project_id AND q.user_id = s.user_id AND q.version = s.qualification_version ORDER BY q.passed_at LIMIT 1) AS qualificationPassedAt, s.saved_at AS savedAt, s.payload, d.language, d.title, d.source, d.question, d.answer FROM submissions s JOIN documents d ON d.project_id = s.project_id AND d.id = s.document_id WHERE s.project_id = ? AND (? IS NULL OR d.language = ?) ORDER BY s.saved_at, s.id").bind(projectId, language ?? null, language ?? null).all<{ payload: string; [key: string]: unknown }>();
+    const rows = await this.db.prepare(`SELECT s.id, s.project_id AS projectId, s.document_id AS documentId, d.qa_id, s.user_id AS userId,
+      s.request_id AS requestId, s.qualification_version AS qualificationVersion,
+      (SELECT q.passed_at FROM qualifications q WHERE q.project_id = s.project_id AND q.user_id = s.user_id AND q.version = s.qualification_version ORDER BY q.passed_at LIMIT 1) AS qualificationPassedAt,
+      s.saved_at AS savedAt, s.payload, d.language, d.title, d.source, d.question, d.answer
+      FROM submissions s JOIN documents d ON d.project_id = s.project_id AND d.id = s.document_id
+      WHERE s.project_id = ? AND (? IS NULL OR d.language = ?) ORDER BY s.saved_at, s.id`)
+      .bind(projectId, language ?? null, language ?? null).all<{ payload: string; [key: string]: unknown }>();
     const answerKeys = (await this.db.prepare("SELECT version, answers, confirmed_by AS confirmedBy, confirmed_at AS confirmedAt FROM answer_key_versions WHERE domain = ? ORDER BY confirmed_at").bind(project.domain).all<{ answers: string; [key: string]: unknown }>()).results.map((key) => ({ ...key, answers: JSON.parse(key.answers) }));
     await this.audit("annotations.export", projectId, { language: language ?? null, annotations: rows.results.length });
     return { project, exportedAt: new Date().toISOString(), answerKeys, annotations: rows.results.map(({ payload, ...row }) => ({ ...row, ...JSON.parse(payload) })) };

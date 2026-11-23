@@ -48,8 +48,10 @@ server (under Litestream when configured). Migrations are idempotent. The health
 - Each annotator has one active assignment. For EUR-Lex, UN, and Chemistry, select a project and a
   document language in `/admin`, then create or assign accounts under **Annotators**. Several
   reviewers can share an assignment and each sees only their own reviews.
-- Under **Documents**, choose the destination language and import one UTF-8 CSV per language with
-  the headers `document,question,answer`. Exports can cover that language or the whole project.
+- Under **Documents**, choose the destination language and import one UTF-8 CSV per language.
+  Include `document`, `question`, and `answer` in any order. The optional `qa_id` column carries your
+  original identifier into administrator exports for the selected language or the whole project.
+  Other columns are ignored. A missing or blank `qa_id` exports as `null`.
   Qualification is per annotator and project. Custom projects support project-only assignments.
 - Annotators can change their own password at `/account/password`; this revokes their other sessions.
   `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts, resets

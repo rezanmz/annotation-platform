@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
+import { parseDocumentCsv } from '../components/admin/csv.ts';
 
 const work = await mkdtemp(join(tmpdir(), 'annotation-backend-'));
 await build({ entryPoints: [new URL('../lib/server/service.ts', import.meta.url).pathname], outfile: join(work, 'service.mjs'), bundle: true, platform: 'node', format: 'esm' });
@@ -320,6 +321,33 @@ test('CSV import is atomic and repeated content with changed IDs cannot duplicat
     await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document('doc-2', 'A new source'), document('new-id')] }), expectStatus(409));
     assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM documents WHERE project_id = 'eurlex'").get().n, 1);
     await assert.rejects(admin.adminAction({ action: 'importDocuments', projectId: 'eurlex', language: 'en', documents: [document('doc-2', 'Same source'), document('doc-3', 'Same source')] }), expectStatus(409));
+  } finally { db.close(); }
+});
+
+test('CSV identifiers round-trip through administrator exports and stay private throughout review', async () => {
+  const { db, admin, alice } = await setup();
+  try {
+    const qaId = '000042/é';
+    const { errors, documents } = parseDocumentCsv(`id,question,qa_id,answer,document\nignored-source-id,When?,${qaId},Monday.,The meeting is Monday.`);
+    assert.deepEqual(errors, []);
+    await admin.adminAction({
+      action: 'importDocuments', projectId: 'eurlex', language: 'en',
+      documents: documents.map(row => ({ ...row, id: 'internal-42', title: 'Document 002' })),
+    });
+    await alice.qualify('eurlex', { answers });
+    await alice.submit('eurlex', 'doc-1', input('review-without-id'));
+    const receipt = await alice.submit('eurlex', 'internal-42', input('review-with-id'));
+    const detail = await alice.document('eurlex', 'internal-42');
+    assert.equal(detail.id, 'internal-42');
+    assert.equal(detail.submission.id, receipt.id);
+    const reviewerData = JSON.stringify([await alice.sessionProjects(), await alice.project('eurlex'), detail, receipt]);
+    for (const privateValue of ['qa_id', qaId, 'ignored-source-id']) assert.equal(reviewerData.includes(privateValue), false);
+    for (const language of [undefined, 'en']) {
+      const { annotations } = await admin.export('eurlex', language);
+      assert.deepEqual(Object.fromEntries(annotations.map(row => [row.documentId, row.qa_id])), { 'doc-1': null, 'internal-42': qaId });
+      assert.equal(JSON.stringify(annotations).includes('ignored-source-id'), false);
+    }
+    await assert.rejects(alice.export('eurlex', 'en'), expectStatus(403));
   } finally { db.close(); }
 });
 
@@ -753,7 +781,9 @@ test('upgrading preserves unlabeled work and supports project-only imports and a
     const admin = new AnnotationService(db, actors.admin);
     const alice = new AnnotationService(db, actors.alice);
     assert.equal((await alice.document('un', 'old')).submission.id, 'saved');
-    assert.equal((await admin.export('un')).annotations[0].language, null);
+    const [historical] = (await admin.export('un')).annotations;
+    assert.equal(historical.language, null);
+    assert.equal(historical.qa_id, null);
     assert.deepEqual((await admin.export('un', 'en')).annotations, []);
     await admin.adminAction({ action: 'removeMember', projectId: 'un', language: null, email: actors.alice.email });
     await admin.adminAction({ action: 'createProject', id: 'custom', domain: 'legal', name: 'Custom project' });

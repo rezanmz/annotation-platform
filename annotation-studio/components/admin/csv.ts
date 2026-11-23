@@ -1,4 +1,4 @@
-export type CsvDocument = { source: string; question: string; answer: string };
+export type CsvDocument = { source: string; question: string; answer: string; qa_id?: string };
 export type CsvPreview = { documents: CsvDocument[]; errors: string[]; totalRows: number };
 
 /** RFC 4180-style parsing: quoted commas, escaped quotes, CRLF and embedded newlines. */
@@ -50,14 +50,19 @@ export function parseDocumentCsv(input: string): CsvPreview {
 
   const headers = rows[0].cells.map((header) => header.trim().toLowerCase());
   const required = ["document", "question", "answer"];
-  if (headers.length !== 3 || required.some((header) => headers.filter((value) => value === header).length !== 1)) {
-    return { documents: [], errors: ["Use exactly these three column headers: document, question, answer. They may appear in any order."], totalRows: rows.length - 1 };
+  if (required.some((header) => headers.filter((value) => value === header).length !== 1)) {
+    return { documents: [], errors: ["Include document, question, and answer once each, in any order."], totalRows: rows.length - 1 };
   }
+  const qaIdIndex = headers.indexOf("qa_id");
+  if (qaIdIndex !== headers.lastIndexOf("qa_id")) {
+    return { documents: [], errors: ["Include the optional qa_id column at most once."], totalRows: rows.length - 1 };
+  }
+  const requiredIndexes = required.map((header) => headers.indexOf(header));
   const documents: CsvDocument[] = [];
   const seen = new Set<string>();
   for (const row of rows.slice(1)) {
-    if (row.cells.length !== 3) { errors.push(`Line ${row.line}: expected 3 columns, found ${row.cells.length}. Quote fields containing commas or line breaks.`); continue; }
-    const values = required.map((header) => row.cells[headers.indexOf(header)].trim());
+    if (row.cells.length !== headers.length) { errors.push(`Line ${row.line}: expected ${headers.length} columns, found ${row.cells.length}. Quote fields containing commas or line breaks.`); continue; }
+    const values = requiredIndexes.map((index) => row.cells[index].trim());
     const missing = required.filter((_, index) => !values[index]);
     if (missing.length) { errors.push(`Line ${row.line}: ${missing.join(", ")} ${missing.length > 1 ? "are" : "is"} empty.`); continue; }
     const limits = [200000, 20000, 100000];
@@ -66,7 +71,10 @@ export function parseDocumentCsv(input: string): CsvPreview {
     const signature = JSON.stringify(values);
     if (seen.has(signature)) { errors.push(`Line ${row.line}: duplicate document, question and answer within this file.`); continue; }
     seen.add(signature);
-    documents.push({ source: values[0], question: values[1], answer: values[2] });
+    const document: CsvDocument = { source: values[0], question: values[1], answer: values[2] };
+    const qaId = row.cells[qaIdIndex];
+    if (qaId?.trim()) document.qa_id = qaId;
+    documents.push(document);
   }
   if (rows.length === 1) errors.push("Add at least one document below the header row.");
   if (rows.length - 1 > 500) errors.push("Import at most 500 documents per file. Split this file into smaller batches.");

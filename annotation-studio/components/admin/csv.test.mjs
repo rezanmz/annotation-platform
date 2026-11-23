@@ -15,10 +15,22 @@ test('rejects a truncated quoted row without returning partial data', () => {
   assert.match(result.errors[0], /not closed/);
 });
 
-test('rejects duplicate/missing/extra column headers', () => {
-  for (const input of ['document,question,question\nA,B,C', 'document,question\nA,B', 'document,question,answer,other\nA,B,C,D']) {
+test('requires each content header once and rejects an ambiguous qa_id header', () => {
+  for (const input of ['document,question,answer,Question\nA,B,C,D', 'document,question,other\nA,B,D', 'document,question,answer,qa_id,QA_ID\nA,B,C,D,E']) {
     assert.equal(parseDocumentCsv(input).errors.length, 1);
   }
+});
+
+test('ignores extra columns in any position and preserves a supplied qa_id as text', () => {
+  const result = parseDocumentCsv('note,Answer, QA_ID ,note,question,document,id\r\n"unused,\r\nmetadata",A,0000123,tag,Q,S,external\r\ntag,A2,,tag,Q2,S2,extra');
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.documents, [
+    { source: 'S', question: 'Q', answer: 'A', qa_id: '0000123' },
+    { source: 'S2', question: 'Q2', answer: 'A2' },
+  ]);
+  const extraOnly = parseDocumentCsv('answer,unused,document,question\nA,metadata,S,Q');
+  assert.deepEqual(extraOnly.errors, []);
+  assert.deepEqual(extraOnly.documents, [{ source: 'S', question: 'Q', answer: 'A' }]);
 });
 
 test('flags missing fields and malformed columns with source line numbers', () => {
@@ -26,10 +38,12 @@ test('flags missing fields and malformed columns with source line numbers', () =
   assert.equal(result.documents.length, 1);
   assert.match(result.errors[0], /Line 4: expected 3 columns/);
   assert.match(result.errors[1], /Line 5: question is empty/);
+  const wide = parseDocumentCsv('tag,answer,document,question,qa_id\nunused,A,S,Q');
+  assert.match(wide.errors[0], /Line 2: expected 5 columns, found 4/);
 });
 
-test('rejects duplicate content within an import', () => {
-  const result = parseDocumentCsv('document,question,answer\nSource,Question,Answer\nSource,Question,Answer\n');
+test('rejects duplicate content within an import even with different IDs and unused columns', () => {
+  const result = parseDocumentCsv('document,question,answer,qa_id,extra\nSource,Question,Answer,1,first\nSource,Question,Answer,2,second\n');
   assert.equal(result.documents.length, 1);
   assert.match(result.errors[0], /duplicate/);
 });

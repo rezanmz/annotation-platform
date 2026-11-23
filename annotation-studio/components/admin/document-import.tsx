@@ -2,11 +2,11 @@
 
 import { useRef, useState } from "react";
 import { ArrowUpFromLine, Check, FileSpreadsheet, Download, AlertCircle, X } from "lucide-react";
-import { parseDocumentCsv, type CsvPreview } from "./csv";
+import { parseDocumentCsv, type CsvDocument, type CsvPreview } from "./csv";
 import { contentLanguage } from "@/lib/languages";
 import type { AdminAction, AdminAssignment } from "./types";
 
-type PreparedDocument = { id: string; title: string; source: string; question: string; answer: string };
+type PreparedDocument = CsvDocument & { id: string; title: string };
 
 export function DocumentImport({ assignment, action, refresh }: { assignment: AdminAssignment; action: AdminAction; refresh: () => Promise<void> }) {
   const { projectId, language, label } = assignment;
@@ -67,7 +67,7 @@ export function DocumentImport({ assignment, action, refresh }: { assignment: Ad
   const document = preview?.documents[selected];
   return <section className="admin-card admin-import">
     <div className="admin-section-heading"><div><p className="admin-eyebrow">DATASET</p><h2>Import documents</h2><p>Add the source text and generated question–answer pairs for <strong>{label}</strong>.</p></div><FileSpreadsheet size={25} aria-hidden="true" /></div>
-    <div className="admin-format"><code>document,question,answer</code><p>Three required columns. Save as UTF-8 CSV; quote fields containing commas, quotes, or line breaks. Maximum 500 rows per import.</p></div>
+    <div className="admin-format"><code>document,question,answer</code><p>Include these three columns in any order. Add <strong>qa_id</strong> to identify rows in administrator exports. Other columns are ignored. Use UTF-8 CSV and quote fields containing commas, quotes, or line breaks. Maximum 500 rows per import.</p></div>
     <div className="admin-upload" onDragOver={(event) => { event.preventDefault(); }} onDrop={(event) => { event.preventDefault(); if (!busy) void loadFile(event.dataTransfer.files[0]); }}>
       <span className="admin-upload-icon"><ArrowUpFromLine size={24} /></span><h3>Bring your dataset here</h3><p>Drop a CSV file, or choose one from your computer.</p>
       <input ref={input} type="file" accept=".csv,text/csv" className="admin-file-input" id={`csv-${projectId}`} disabled={busy} onChange={(event) => { void loadFile(event.target.files?.[0]); }} />
