@@ -29,3 +29,12 @@
 @media(max-width:790px){.auth-page{grid-template-columns:1fr}.auth-introduction{min-height:0;padding:25px 30px 28px;border-right:0;border-bottom:1px solid #dfe7d6}.auth-brand{font-size:25px}.auth-intro-content{padding:27px 0 0;margin:0;max-width:none}.auth-intro-content h1{font-size:32px;margin-bottom:12px;line-height:1.2}.auth-intro-content h1>br{display:none}.auth-intro-content>p{font-size:12px;max-width:440px;margin:0}.auth-feature,.auth-intro-footer,.auth-intro-content>.eyebrow{display:none}.auth-form-column{padding:37px 30px 75px;min-height:580px;justify-content:flex-start}.auth-form-symbol{display:none}.auth-form-card{max-width:430px}.auth-form-card>h2{font-size:33px}.auth-form-intro{font-size:12px}.auth-page-footer{bottom:25px}.session-recovery{flex-wrap:wrap}.session-recovery>div{flex-basis:calc(100% - 35px)}}
 @media(max-width:480px){.auth-introduction{padding:24px 23px}.auth-intro-content{padding-top:24px}.auth-intro-content h1{font-size:29px}.auth-intro-content>p{font-size:11px}.auth-form-column{padding:33px 23px 72px}.auth-form-card>h2{font-size:31px}.auth-form-card>.eyebrow{font-size:8px}.auth-form-intro{font-size:12px;line-height:1.8;margin-bottom:25px}.auth-field>label{font-size:12px}.auth-input-wrap{min-height:47px}.auth-input-wrap>input{height:47px;font-size:14px}.auth-input-wrap>input::placeholder{font-size:12px}.auth-field>small{font-size:10px}.auth-submit{font-size:13px}.auth-error{font-size:12px}.auth-support>p{font-size:11px}.auth-support>strong{font-size:12px}.auth-demo-link{font-size:11px}.auth-page-footer{font-size:9px}}
 .auth-switch-account>p{font-size:12px;line-height:1.9;color:#829873;margin:0 0 20px}.auth-switch-account>p>strong{display:block;color:#5f7c4d;font-weight:500;overflow-wrap:anywhere}.auth-switch-account>.auth-sign-out-wrap{display:flex;margin-top:12px}.auth-switch-button{width:100%;font-size:11px;padding:12px 15px}.auth-switch-account>.auth-sign-out-wrap>.auth-sign-out-error{bottom:auto;top:calc(100% + 9px);width:100%}
+.criterion-comment select {
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 7px 9px;
+  border: 1px solid var(--border, #ccd6c7);
+  border-radius: 5px;
+  background: white;
+  color: inherit;
+}

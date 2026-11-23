@@ -1,7 +1,8 @@
+import { isCannotAssessReason, requiresComment, type CannotAssessReason } from "../scoring";
+
 export const CRITERION_IDS = ["grounding", "precision", "numerical_fidelity", "search_realism", "standalone_clarity", "information_value", "focus_formulation", "linguistic_quality"] as const;
 export type Domain = "legal" | "chemistry";
-export type Rating = { criterionId: string; score: number | null; comment: string };
-export type SubmissionInput = { requestId: string; ratings: Rating[]; comment: string };
+export type Rating = { criterionId: string; score: number | null; comment: string; cannotAssessReason?: CannotAssessReason };
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -19,9 +20,7 @@ export function validId(value: unknown, label = "ID"): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(id)) throw new ApiError(400, `${label} contains unsupported characters.`);
   return id;
 }
-export function validateSubmission(value: unknown, domain: Domain): SubmissionInput {
-  const body = object(value);
-  const requestId = validId(body.requestId, "Submission request ID");
+export function validateSubmission(body: Record<string, unknown>, replay: boolean) {
   if (!Array.isArray(body.ratings) || body.ratings.length !== CRITERION_IDS.length) throw new ApiError(400, "All eight criteria must be graded.");
   const byId = new Map<string, Rating>();
   for (const entry of body.ratings) {
@@ -31,10 +30,15 @@ export function validateSubmission(value: unknown, domain: Domain): SubmissionIn
     const score = row.score;
     if (score !== null && (typeof score !== "number" || !Number.isInteger(score) || score < 1 || score > 5)) throw new ApiError(400, "Scores must be whole numbers from 1 to 5, or cannot assess.");
     const comment = row.comment === undefined ? "" : string(row.comment, "Criterion explanation", 10000, true);
-    if ((domain === "chemistry" || score === null || score <= 3 || score === 5) && !comment) throw new ApiError(400, "Explain every score of 3 or lower, exceptional score of 5, and cannot assess. Chemistry requires a reason for every score.");
-    byId.set(criterionId, { criterionId, score, comment });
+    if (requiresComment(score) && !comment) throw new ApiError(400, "Add an explanation for scores 1–3 and for Cannot assess.");
+    const rating: Rating = { criterionId, score, comment };
+    if (score === null && !(replay && row.cannotAssessReason === undefined)) {
+      if (!isCannotAssessReason(row.cannotAssessReason)) throw new ApiError(400, "Choose missing material or insufficient expertise for Cannot assess.");
+      rating.cannotAssessReason = row.cannotAssessReason;
+    }
+    byId.set(criterionId, rating);
   }
-  return { requestId, ratings: CRITERION_IDS.map((id) => byId.get(id)!), comment: body.comment === undefined ? "" : string(body.comment, "Document comment", 20000, true) };
+  return { ratings: CRITERION_IDS.map((id) => byId.get(id)!), comment: body.comment === undefined ? "" : string(body.comment, "Document comment", 20000, true) };
 }
 export function validateAnswers(value: unknown): Record<string, string> {
   const input = object(value);

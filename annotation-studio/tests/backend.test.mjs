@@ -215,23 +215,52 @@ test('all eight distinct criteria, valid scores, and required explanations are v
     let p = input(); p.ratings.pop(); cases.push(p);
     p = input(); p.ratings[7] = p.ratings[0]; cases.push(p);
     for (const score of [0, 6, 2.5, '4', undefined]) { p = input(); p.ratings[0].score = score; cases.push(p); }
-    for (const score of [1, 2, 3, 5, null]) { p = input(); p.ratings[0].score = score; p.ratings[0].comment = '   '; cases.push(p); }
-    for (const invalid of cases) await assert.rejects(alice.submit('eurlex', 'doc-1', invalid), expectStatus(400));
-    await assert.rejects(eve.submit('chemistry', 'doc-1', input()), expectStatus(400));
-    const chemistry = input(); for (const r of chemistry.ratings) r.comment = 'Specific supporting reason';
-    assert.ok((await eve.submit('chemistry', 'doc-1', chemistry)).id);
-    assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM submissions WHERE project_id = 'eurlex'").get().n, 0);
+    for (const score of [1, 2, 3, null]) { p = input(); p.ratings[0].score = score; p.ratings[0].comment = '   '; cases.push(p); }
+    for (const [actor, project] of [[alice, 'eurlex'], [eve, 'chemistry']]) {
+      for (const invalid of cases) await assert.rejects(actor.submit(project, 'doc-1', invalid), expectStatus(400));
+      const complete = input();
+      complete.ratings[0].score = 5;
+      delete complete.ratings[0].comment;
+      complete.ratings[1].score = 3;
+      complete.ratings[1].comment = 'An important qualification is omitted.';
+      assert.ok((await actor.submit(project, 'doc-1', complete)).id);
+    }
   } finally { db.close(); }
 });
 
-test('cannot assess has a reason and numerical not-applicable uses 4 with its comment', async () => {
+test('both domains enforce the two permitted Cannot assess reasons and record numerical not-applicable as 4', async () => {
+  const { db, alice, eve, admin } = await setup();
+  try {
+    for (const [actor, project] of [[alice, 'eurlex'], [eve, 'chemistry']]) {
+      await actor.qualify(project, { answers });
+      const p = input();
+      p.ratings[0] = { criterionId: 'grounding', score: null, comment: 'Required appendix is missing.' };
+      for (const reason of [undefined, 'known_error', 'not_applicable']) {
+        p.ratings[0].cannotAssessReason = reason;
+        await assert.rejects(actor.submit(project, 'doc-1', p), expectStatus(400));
+      }
+      p.ratings[0].cannotAssessReason = 'missing_material';
+      p.ratings[7] = { criterionId: 'linguistic_quality', score: null, comment: '', cannotAssessReason: 'insufficient_expertise' };
+      await assert.rejects(actor.submit(project, 'doc-1', p), expectStatus(400));
+      p.ratings[7].comment = 'I cannot judge the specialized terminology.';
+      p.ratings[2].comment = 'not applicable';
+      const saved = await actor.submit(project, 'doc-1', p);
+      assert.equal((await actor.submit(project, 'doc-1', p)).id, saved.id);
+      assert.deepEqual((await admin.export(project)).annotations[0].ratings, p.ratings);
+    }
+  } finally { db.close(); }
+});
+
+test('an exact retry of a saved legacy Cannot assess review returns its original receipt', async () => {
   const { db, alice } = await setup();
   try {
-    await alice.qualify('eurlex', { answers });
-    const p = input(); p.ratings[0] = { criterionId: 'grounding', score: null, comment: 'Required source appendix is missing.' }; p.ratings[2].comment = 'not applicable';
-    await alice.submit('eurlex', 'doc-1', p);
-    const saved = (await alice.document('eurlex', 'doc-1')).submission;
-    assert.equal(saved.ratings[0].score, null); assert.equal(saved.ratings[2].score, 4); assert.equal(saved.ratings[2].comment, 'not applicable');
+    const old = input();
+    old.ratings[0] = { criterionId: 'grounding', score: null, comment: 'Appendix missing.' };
+    db.sqlite.prepare('INSERT INTO submissions (id,project_id,document_id,user_id,request_id,payload,qualification_version,saved_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run('original', 'eurlex', 'doc-1', 'alice', old.requestId, JSON.stringify({ ratings: old.ratings, comment: old.comment }), 'v1', '2026-01-01');
+    assert.equal((await alice.submit('eurlex', 'doc-1', old)).id, 'original');
+    old.ratings[0].comment = 'Different reason.';
+    await assert.rejects(alice.submit('eurlex', 'doc-1', old), expectStatus(409));
   } finally { db.close(); }
 });
 

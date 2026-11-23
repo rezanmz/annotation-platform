@@ -8,8 +8,9 @@ volume holds SQLite and the private config containing initial annotator logins.
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `DATABASE_PATH` | yes | `/data/app.db` on Railway. The directory is created automatically. |
-| `GUIDELINES_DIR` | yes | `/data/guidelines`. Seeded at boot from the private image copy when missing. |
-| `QUALIFICATION_KEYS_JSON` | one-time | `{"version":"…","answers":{"legal":[…],"chemistry":[…]}}`. Seeds keys only when none exist. |
+| `ANNOTATION_MATERIALS_DIR` | no | Directory containing the two named guideline PDFs and `qualification-answer-keys.json`. Defaults to the repository root locally and `/app/seed-guidelines` in the container. |
+| `GUIDELINES_DIR` | no | Directory for legacy `legal.pdf` and `chemistry.pdf`. Defaults to `/data/guidelines` in the container. |
+| `QUALIFICATION_KEYS_JSON` / `QUALIFICATION_KEYS_FILE` | no | Fallback when the supplied JSON is absent. A versioned `{"version":"…","answers":{"legal":[…],"chemistry":[…]}}` config seeds an empty domain. |
 | `BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_NAME` / `BOOTSTRAP_ADMIN_PASSWORD` | one-time | Creates the first active administrator only when none exists. Remove the password variable after the first boot. |
 | `TRUST_PROXY` | yes | `1` behind Railway's edge so client IPs are read from `X-Forwarded-For`. |
 | `AUDIT_RETENTION_DAYS` | no | Default 365. |
@@ -34,6 +35,12 @@ Read `/data/app.db.annotators.json` on the volume for the generated logins, inde
 language (for example, `eurlex/fr`). A custom `DATABASE_PATH` uses `<DATABASE_PATH>.annotators.json`.
 The file is owner-readable and writable (0600). Each installation generates its own passwords.
 Subsequent starts preserve individual password changes and administrator decisions.
+
+Supply `legal_annotation_guidelines.pdf` for EUR-Lex and UN, `chemistry_annotation_guidelines.pdf`
+for Chemistry, and `qualification-answer-keys.json` with `question_order` and ten A–D answers for
+each of `eurlex`, `un`, and `chemistry`. EUR-Lex and UN share the legal test and key. Startup imports
+changed materials into SQLite together. A new key revision applies to future tests. Previous passes
+retain their original versions. Subsequent starts with the same files preserve administrator edits.
 
 ## Deploy
 

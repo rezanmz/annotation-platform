@@ -23,7 +23,8 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     DATABASE_PATH=/data/app.db \
-    GUIDELINES_DIR=/data/guidelines
+    GUIDELINES_DIR=/data/guidelines \
+    ANNOTATION_MATERIALS_DIR=/app/seed-guidelines
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
@@ -32,6 +33,7 @@ COPY drizzle ./drizzle
 COPY scripts ./scripts
 COPY lib/languages.ts ./lib/languages.ts
 COPY lib/server/password.ts ./lib/server/password.ts
+COPY lib/server/keys.ts ./lib/server/keys.ts
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh && useradd --uid 10001 --create-home app && mkdir -p /data && chown -R app:app /data /app
 EXPOSE 3000

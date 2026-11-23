@@ -139,16 +139,18 @@ export class AnnotationService {
   }
   async submit(projectId: string, documentId: string, body: unknown) {
     const project = await this.assertMember(projectId);
-    const expectedLanguage = object(body).expectedLanguage;
+    const request = object(body);
+    const expectedLanguage = request.expectedLanguage;
     if (expectedLanguage !== undefined && expectedLanguage !== project.language) throw new ApiError(409, "Your language assignment changed. Reopen your assigned project before submitting.");
-    const input = validateSubmission(body, project.domain);
-    const payload = JSON.stringify({ ratings: input.ratings, comment: input.comment });
+    const requestId = validId(request.requestId, "Submission request ID");
     const scope = [this.actor.id, projectId, project.language];
     // Check existing receipts first so a safe retry remains possible after a key revision.
     const retries = this.db.prepare(`SELECT s.* FROM (${assignedDocuments}) d JOIN submissions s ON s.project_id = d.project_id AND s.document_id = d.id
-      WHERE s.user_id = ? AND (s.request_id = ? OR d.id = ?)`).bind(...scope, this.actor.id, input.requestId, documentId);
+      WHERE s.user_id = ? AND (s.request_id = ? OR d.id = ?)`).bind(...scope, this.actor.id, requestId, documentId);
     const existing = await retries.all<SubmissionRow>();
-    if (existing.results.length) return this.resolveRetry(existing.results, projectId, documentId, input.requestId, payload);
+    // Exact replays of earlier reviews can predate the structured Cannot assess reason.
+    const payload = JSON.stringify(validateSubmission(request, existing.results.length > 0));
+    if (existing.results.length) return this.resolveRetry(existing.results, projectId, documentId, requestId, payload);
     const qualification = await this.qualification(project);
     if (!qualification.passed) throw new ApiError(403, "Pass the qualification test before submitting annotations.");
     const visibleDocument = `SELECT 1 FROM (${assignedDocuments}) WHERE id = ?`;
@@ -163,10 +165,10 @@ export class AnnotationService {
       SELECT ?, ?, ?, ?, ?, ?, ?, ?
       WHERE EXISTS (${visibleDocument})
       AND EXISTS (SELECT 1 FROM qualifications WHERE project_id = ? AND user_id = ? AND version = ?)
-      ON CONFLICT DO NOTHING`).bind(id, projectId, documentId, this.actor.id, input.requestId, payload, qualification.version, savedAt, ...scope, documentId, projectId, this.actor.id, qualification.version).run();
+      ON CONFLICT DO NOTHING`).bind(id, projectId, documentId, this.actor.id, requestId, payload, qualification.version, savedAt, ...scope, documentId, projectId, this.actor.id, qualification.version).run();
     if (!changed(result)) {
       const rows = await retries.all<SubmissionRow>();
-      if (rows.results.length) return this.resolveRetry(rows.results, projectId, documentId, input.requestId, payload);
+      if (rows.results.length) return this.resolveRetry(rows.results, projectId, documentId, requestId, payload);
       throw new ApiError(409, "Access or qualification changed. Your annotation was not saved; refresh and retry.");
     }
     // Read back from the same primary session. Never claim success on a queued/local write.

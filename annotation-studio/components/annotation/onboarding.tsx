@@ -74,7 +74,11 @@ export default function Onboarding({ project, qualification, mode, demo, questio
         <iframe className="guideline-pdf" src={`${pdfUrl}#view=FitH`} title={`${chemistry ? 'Chemistry' : 'Legal'} annotation guideline PDF`} />
         <div className="guideline-reader-fallback"><BookOpen size={16} /><p>If the PDF does not appear or is difficult to read, <a href={pdfUrl} target="_blank" rel="noreferrer">open the full guideline in a new tab</a>. Read the full guideline before continuing.</p></div>
       </section>
-      <div className="guideline-reading-reminders"><strong>As you read, pay attention to:</strong><ul><li>The eight criteria and the difference between scores 4 and 5.</li><li>When to explain a score, use “not applicable,” or choose “cannot assess.”</li><li>{chemistry ? 'The requirement to give a brief reason for every chemistry score.' : 'How to assess each criterion independently and identify needed corrections.'}</li></ul></div>
+      <div className="guideline-reading-reminders"><strong>When recording your review</strong><ul>
+        <li>Explain scores 1–3. Comments are optional for 4 and 5.</li>
+        <li>Choose “Cannot assess” only when missing material or insufficient expertise prevents a judgment. Explain what is missing.</li>
+        <li>For numerical fidelity, choose “No relevant numbers or references” to record 4 with “not applicable.”</li>
+      </ul></div>
       <section className="guideline-acknowledgement">
         {passed ? <><div><CheckCircle2 size={21} /><div><strong>Qualification complete</strong><p>{demo ? 'Demo progress is kept only in this browser session.' : 'Your successful qualification is saved for this project.'}</p></div></div><button className="button" onClick={onStart}>Return to annotation <ArrowRight size={16} /></button></> : <>
           {qualification.guidelineRead ? <div className="guideline-already-read"><CheckCircle2 size={21} /><div><strong>Guideline acknowledged</strong><p>You can revisit it at any time while completing the test.</p></div></div> : <label className="guideline-read-checkbox"><input type="checkbox" checked={checked} disabled={acknowledging} onChange={event => setChecked(event.target.checked)} /><span><strong>I have read the full guideline and understand the scoring rules.</strong><small>Continue when you are ready to answer the ten qualification questions.</small></span></label>}

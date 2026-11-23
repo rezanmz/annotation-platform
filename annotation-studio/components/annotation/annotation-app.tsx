@@ -9,6 +9,7 @@ import {
   SlidersHorizontal, Sparkles, X,
 } from 'lucide-react';
 import { CRITERIA, QUESTIONS } from '@/lib/guidelines';
+import { cannotAssessReasons, isCannotAssessReason, requiresComment, type CannotAssessReason } from '@/lib/scoring';
 import { assignmentName, contentLanguage, type Language } from '@/lib/languages';
 import { SAMPLE_DOCUMENTS } from '@/lib/sample-documents';
 import SignOutButton from '@/components/auth/sign-out-button';
@@ -17,7 +18,7 @@ import Onboarding, { OnboardingSteps, type Qualification, type TestQuestion } fr
 type AssignedProject = { id: string; name: string; domain: string; description: string; language: Language | null };
 type Project = AssignedProject & { total: number; submitted: number; qualified: boolean; qualificationReady: boolean };
 type Session = { user: { id: string; name: string; email: string } | null; isAdmin: boolean; projects: Project[]; configured: boolean; authMode: 'local' | 'chatgpt'; demoEnabled?: boolean };
-type Rating = { criterionId: string; score: number | null | undefined; comment: string };
+type Rating = { criterionId: string; score: number | null | undefined; comment: string; cannotAssessReason?: CannotAssessReason };
 type Receipt = { id: string; savedAt: string; requestId: string; ratings?: Rating[]; comment?: string };
 type AnnotationDoc = { id: string; title: string; source: string; question: string; answer: string; submission?: Receipt };
 type DocList = { id: string; title: string; submitted: boolean };
@@ -284,17 +285,19 @@ export default function AnnotationApp() {
     if (!draft || receipt || saving || draft.pending) return;
     const existing = draft.ratings.find(r => r.criterionId === id);
     const updated = { criterionId: id, score: undefined, comment: '', ...existing, ...change };
+    if (updated.score !== null) delete updated.cannotAssessReason;
+    if (id === 'numerical_fidelity' && existing?.score === 4 && existing.comment === 'not applicable' && updated.score !== 4) updated.comment = '';
     setDraft({ ...draft, ratings: [...draft.ratings.filter(r => r.criterionId !== id), updated] }); setDirty(true); setError('');
   }
-  function requiredComment(score: number | null | undefined) { return score !== undefined && (score === null || score <= 3 || score === 5 || isChemistry); }
   const invalidRatings = CRITERIA.filter(c => {
     const rating = draft?.ratings.find(r => r.criterionId === c.id);
-    return !rating || rating.score === undefined || (requiredComment(rating.score) && !rating.comment.trim());
+    return !rating || rating.score === undefined || (requiresComment(rating.score) && !rating.comment.trim())
+      || (rating.score === null && !isCannotAssessReason(rating.cannotAssessReason));
   });
 
   async function submit() {
     if (!draft || !doc || !project || saving || receipt || sessionExpired) return;
-    if (invalidRatings.length) { setError(`Complete all eight criteria and required explanations before submitting. Still needed: ${invalidRatings.map(c => c.name).join(', ')}.`);
+    if (!draft.pending && invalidRatings.length) { setError(`Complete the scores and required reasons for ${invalidRatings.map(c => c.name).join(', ')}.`);
       document.getElementById(`criterion-${invalidRatings[0].id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return; }
     const pendingDraft = { ...draft, pending: true };
@@ -381,13 +384,57 @@ export default function AnnotationApp() {
             <div className="annotation-heading"><div><div className="eyebrow"><span className={`project-dot ${project.id}`} />{assignmentName(project).toUpperCase()}<span className="eyebrow-divider">/</span>QUALITY EVALUATION</div><h1>A thoughtful review starts here.</h1><p>Read the context. Evaluate the question and answer. Make every score count.</p></div><button className="button button-secondary guideline-button" onClick={() => navigate('guidelines')}><BookOpen size={16} />Annotation guide <ArrowRight size={14} /></button></div>
             <div className="document-toolbar"><div className="document-counter"><FileText size={18} /><strong>Document {String(activeIndex + 1).padStart(2, '0')}</strong><span>of {String(projectData?.documents.length || 0).padStart(2, '0')}</span><span className="toolbar-divider" /><span className="doc-id">{doc.id}</span></div><div className="document-toolbar-right"><span className={`document-status ${receipt ? 'status-saved' : ''}`}>{receipt ? <CheckCircle2 size={14} /> : <span className="status-dot" />}{receipt ? (demo ? 'Preview complete' : 'Submitted') : draft.pending ? 'Save unconfirmed' : dirty ? 'Unsubmitted changes' : 'Ready for review'}</span><button className="icon-button bordered" aria-label="Previous document" disabled={activeIndex <= 0 || saving} onClick={() => projectData && openDocument(projectData.documents[activeIndex - 1])}><ArrowLeft size={15} /></button><button className="icon-button bordered" aria-label="Next document" disabled={!projectData || activeIndex >= projectData.documents.length - 1 || saving} onClick={() => projectData && openDocument(projectData.documents[activeIndex + 1])}><ArrowRight size={15} /></button></div></div>
             <div className="annotation-layout"><section className="document-column" aria-label="Document to evaluate"><article className="source-card"><div className="card-label"><span><span className="label-square"><FileText size={14} /></span>SOURCE TEXT</span><span className="subtle-badge">{isChemistry ? 'Research excerpt' : 'Document excerpt'}</span></div><h2 {...contentLanguage(project.language)}>{doc.title}</h2>{demo && <p className="sample-disclaimer">Illustrative sample · not an original source document</p>}<div className="source-text" {...contentLanguage(project.language)}>{doc.source.split('\n\n').map((paragraph, index) => <p key={index}>{paragraph}</p>)}</div><div className="source-footer"><BookOpen size={13} />Use this text as the basis for your evaluation.</div></article><section className="qa-card"><div className="qa-label"><span className="qa-letter">Q</span><span>GENERATED QUESTION</span><span className="generated-badge"><Sparkles size={11} />Generated</span></div><p className="question-text" {...contentLanguage(project.language)}>{doc.question}</p><div className="qa-divider" /><div className="qa-label answer-label"><span className="qa-letter">A</span><span>GENERATED ANSWER</span></div><p className="answer-text" {...contentLanguage(project.language)}>{doc.answer}</p></section><div className="reading-tip"><span className="tip-icon"><CircleHelp size={17} /></span><p><strong>Judge each criterion independently.</strong> A strong answer on one dimension can still need improvement on another.</p></div></section>
-            <section className="evaluation-column" aria-label="Annotation form"><div className="evaluation-card"><div className="evaluation-heading"><div><h2>Quality assessment <span>8 criteria</span></h2><p>Score each criterion from 1 to 5.</p></div><button className="icon-button" aria-label="Show scoring scale" title="Scoring scale" onClick={() => setShowScale(!showScale)}><CircleHelp size={18} /></button></div>{showScale && <div className="score-guide">{SCORE_NAMES.map((label, index) => <div key={label}><strong>{index + 1}</strong><span>{label}</span></div>)}<p>A 4 is fully successful. Reserve 5 for an exceptional strength you can explain.</p></div>}<div className="score-reminder"><MessageSquare size={14} /><span>{isChemistry ? 'Add a brief explanation for every score.' : 'Scores 1–3 need a reason. Explain exceptional 5s, too.'}</span></div><div className="criteria-list">{CRITERIA.map((criterion, index) => {
+            <section className="evaluation-column" aria-label="Annotation form"><div className="evaluation-card"><div className="evaluation-heading"><div><h2>Quality assessment <span>8 criteria</span></h2><p>Score each criterion from 1 to 5.</p></div><button className="icon-button" aria-label="Show scoring scale" title="Scoring scale" onClick={() => setShowScale(!showScale)}><CircleHelp size={18} /></button></div>{showScale && <div className="score-guide">{SCORE_NAMES.map((label, index) => <div key={label}><strong>{index + 1}</strong><span>{label}</span></div>)}<p>A 4 is fully successful. Reserve 5 for an exceptional strength you can explain.</p></div>}<div className="score-reminder"><MessageSquare size={14} /><span>Explain scores 1–3. Comments are optional for 4 and 5.</span></div><div className="criteria-list">{CRITERIA.map((criterion, index) => {
               const rating = draft.ratings.find(r => r.criterionId === criterion.id);
-              const needsComment = requiredComment(rating?.score);
+              const needsComment = requiresComment(rating?.score);
               const commentOpen = needsComment || expanded.includes(criterion.id) || !!rating?.comment;
               const description = isChemistry ? criterion.chemistryDescription || criterion.description : criterion.description;
               const hasScore = rating?.score !== undefined;
-              return <fieldset className={`criterion ${hasScore ? 'criterion-scored' : ''}`} key={criterion.id} id={`criterion-${criterion.id}`} disabled={saving || !!receipt || draft.pending}><legend><span className="criterion-number">{String(index + 1).padStart(2, '0')}</span><span>{criterion.name}</span><button className="criterion-help" type="button" title={description} aria-label={`Read guidance for ${criterion.name}`} aria-expanded={helpCriterion === criterion.id} onClick={() => setHelpCriterion(helpCriterion === criterion.id ? null : criterion.id)}><CircleHelp size={13} /></button>{hasScore && <Check size={13} className="criterion-check" />}</legend><p className="criterion-description">{criterion.question}</p>{helpCriterion === criterion.id && <p className="criterion-guidance">{description}</p>}<div className="rating-line"><div className="score-options" role="radiogroup" aria-label={`${criterion.name} score`}>{[1, 2, 3, 4, 5].map(score => <label key={score} className={`score-option ${rating?.score === score ? 'selected' : ''} ${rating?.score === score && score <= 3 ? 'low-score' : ''}`} title={`${score} — ${SCORE_NAMES[score - 1]}`}><input type="radio" name={`rating-${criterion.id}`} value={score} checked={rating?.score === score} onChange={() => updateRating(criterion.id, { score })} /><span>{score}</span></label>)}</div><button type="button" className={`cannot-assess ${rating && rating.score === null ? 'selected' : ''}`} aria-pressed={rating?.score === null} onClick={() => updateRating(criterion.id, { score: null })}>Cannot assess</button><button type="button" className={`comment-toggle ${commentOpen ? 'is-open' : ''}`} title="Add a criterion comment" aria-label={`Comment on ${criterion.name}`} onClick={() => setExpanded(prev => prev.includes(criterion.id) ? prev.filter(id => id !== criterion.id) : [...prev, criterion.id])}><MessageSquare size={15} /></button></div>{criterion.id === 'numerical_fidelity' && <label className="na-option"><input type="checkbox" checked={rating?.score === 4 && rating.comment.toLowerCase() === 'not applicable'} onChange={event => updateRating(criterion.id, event.target.checked ? { score: 4, comment: 'not applicable' } : { score: 4, comment: '' })} />No relevant numbers or references (score 4)</label>}{commentOpen && <div className="criterion-comment"><label htmlFor={`comment-${criterion.id}`}>{rating?.score === 5 ? 'What makes this exceptional?' : rating?.score === null ? 'What prevents you from assessing this?' : rating && rating.score !== undefined && rating.score !== null && rating.score <= 3 ? 'What needs to be improved?' : 'Reason for this score'}{needsComment && <span>Required</span>}</label><textarea dir="auto" id={`comment-${criterion.id}`} value={rating?.comment || ''} rows={2} placeholder={rating?.score === 5 ? 'Explain the exceptional strength…' : 'Explain your reasoning and any needed correction…'} onChange={event => updateRating(criterion.id, { comment: event.target.value })} maxLength={10000} /></div>}</fieldset>;
+              return <fieldset className={`criterion ${hasScore ? 'criterion-scored' : ''}`} key={criterion.id}
+                id={`criterion-${criterion.id}`} disabled={saving || !!receipt || draft.pending}>
+                <legend><span className="criterion-number">{String(index + 1).padStart(2, '0')}</span><span>{criterion.name}</span>
+                  <button className="criterion-help" type="button" title={description} aria-label={`Read guidance for ${criterion.name}`}
+                    aria-expanded={helpCriterion === criterion.id} onClick={() => setHelpCriterion(helpCriterion === criterion.id ? null : criterion.id)}><CircleHelp size={13} /></button>
+                  {hasScore && <Check size={13} className="criterion-check" />}
+                </legend>
+                <p className="criterion-description">{criterion.question}</p>
+                {helpCriterion === criterion.id && <p className="criterion-guidance">{description}</p>}
+                <div className="rating-line">
+                  <div className="score-options" role="radiogroup" aria-label={`${criterion.name} score`}>
+                    {[1, 2, 3, 4, 5].map(score => <label key={score} className={`score-option ${rating?.score === score ? 'selected' : ''} ${rating?.score === score && score <= 3 ? 'low-score' : ''}`} title={`${score} — ${SCORE_NAMES[score - 1]}`}>
+                      <input type="radio" name={`rating-${criterion.id}`} value={score} checked={rating?.score === score}
+                        onChange={() => updateRating(criterion.id, { score })} /><span>{score}</span>
+                    </label>)}
+                  </div>
+                  <button type="button" className={`cannot-assess ${rating?.score === null ? 'selected' : ''}`}
+                    title="Use only when missing material or insufficient expertise prevents judgment"
+                    aria-pressed={rating?.score === null} onClick={() => updateRating(criterion.id, { score: null })}>Cannot assess</button>
+                  <button type="button" className={`comment-toggle ${commentOpen ? 'is-open' : ''}`} title="Add a criterion comment" aria-label={`Comment on ${criterion.name}`}
+                    aria-expanded={commentOpen} onClick={() => setExpanded(prev => prev.includes(criterion.id) ? prev.filter(id => id !== criterion.id) : [...prev, criterion.id])}><MessageSquare size={15} /></button>
+                </div>
+                {criterion.id === 'numerical_fidelity' && <label className="na-option">
+                  <input type="checkbox" checked={rating?.score === 4 && rating.comment.toLowerCase() === 'not applicable'}
+                    onChange={event => updateRating(criterion.id, { score: 4, comment: event.target.checked ? 'not applicable' : '' })} />No relevant numbers or references (score 4)
+                </label>}
+                {commentOpen && <div className="criterion-comment">
+                  {rating?.score === null && (!receipt || rating.cannotAssessReason) && <>
+                    <label htmlFor={`basis-${criterion.id}`}>What prevents assessment?<span>Required</span></label>
+                    <select id={`basis-${criterion.id}`} required value={rating.cannotAssessReason ?? ''}
+                      onChange={event => {
+                        const reason = event.target.value;
+                        if (isCannotAssessReason(reason)) updateRating(criterion.id, { cannotAssessReason: reason });
+                      }}>
+                      <option value="" disabled>Choose a reason</option>
+                      {Object.entries(cannotAssessReasons).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </>}
+                  <label htmlFor={`comment-${criterion.id}`}>{rating?.score === null ? 'Which material or expertise is missing?' : needsComment ? 'What needs to be improved?' : 'Comment on this score'}
+                    <span>{needsComment ? 'Required' : 'Optional'}</span>
+                  </label>
+                  <textarea dir="auto" id={`comment-${criterion.id}`} required={needsComment} value={rating?.comment || ''} rows={2}
+                    placeholder="Explain your reasoning…" onChange={event => updateRating(criterion.id, { comment: event.target.value })} maxLength={10000} />
+                </div>}
+              </fieldset>;
             })}</div><div className="document-comment"><label htmlFor="document-comment"><MessageSquare size={15} />Overall document comment <span>Optional</span></label><textarea dir="auto" id="document-comment" placeholder="Anything else we should know about this question–answer pair?" rows={3} value={draft.comment} maxLength={20000} disabled={saving || !!receipt || draft.pending} onChange={event => { setDraft({ ...draft, comment: event.target.value }); setDirty(true); }} /></div></div>
             <div className={`submission-panel ${receipt ? 'submission-panel-saved' : ''}`}><div className="submission-progress"><span>{receipt ? <CheckCircle2 size={19} /> : <ShieldCheck size={19} />}</span><div><strong>{receipt ? demo ? 'Demo preview complete' : 'Saved to server' : draft.pending ? 'Save awaiting confirmation' : `${completedRatings} of 8 criteria scored`}</strong><p>{receipt ? `${new Date(receipt.savedAt).toLocaleString()}${demo ? ' · not a real submission' : ''}` : draft.pending ? 'Your answers are held unchanged. Retry safely to confirm.' : 'Submit saves this document immediately.'}</p></div>{receipt && <span className="receipt-label" title={receipt.id}>Receipt {receipt.id.slice(0, 8)}</span>}</div>{receipt ? <button className="button submit-button" disabled={!projectData || activeIndex >= projectData.documents.length - 1} onClick={() => projectData && openDocument(projectData.documents[activeIndex + 1])}>{activeIndex >= (projectData?.documents.length || 0) - 1 ? 'Last document reviewed' : 'Continue to next document'}<ArrowRight size={17} /></button> : <button className="button submit-button" disabled={saving || sessionExpired} onClick={submit}>{saving ? <Loader2 size={17} className="spin" /> : <CheckCheck size={17} />}{saving ? 'Saving your annotation…' : demo ? 'Preview submission' : draft.pending ? 'Retry & confirm save' : 'Submit annotation'}{!saving && <ArrowRight size={17} />}</button>}<p className="save-assurance">{receipt ? demo ? 'Demo previews are cleared when you reload this page.' : 'Your submitted review is locked to preserve the saved record.' : 'Wait for confirmation before continuing to the next document.'}</p></div></section></div>
           </> : <div className="empty-state"><FileText size={35} strokeWidth={1.2} /><h2>No documents to review yet</h2><p>Your administrator can import the question–answer dataset for this project.</p></div>}

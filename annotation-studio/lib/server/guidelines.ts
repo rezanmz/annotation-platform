@@ -29,11 +29,15 @@ function pathFor(domain: GuidelineDomain): string {
 
 /** Guidelines are stored in SQLite so Litestream and database snapshots cover them. */
 export async function readGuideline(domain: GuidelineDomain): Promise<Uint8Array> {
-  const row = await getDatabase().prepare("SELECT bytes FROM guidelines WHERE domain = ?").bind(domain).first<{ bytes: Uint8Array }>();
+  const db = getDatabase();
+  const row = await db.prepare("SELECT bytes FROM guidelines WHERE domain = ?").bind(domain).first<{ bytes: Uint8Array }>();
   if (row?.bytes) return new Uint8Array(row.bytes);
-  // Transition fallback: the first boot imports files seeded on the volume.
-  try { return new Uint8Array(await readFile(pathFor(domain))); }
-  catch { throw new ApiError(503, "The project guideline is not installed on this server yet."); }
+  // A deleted supplied guide must not fall back to an older practice file.
+  if (!await db.prepare("SELECT 1 FROM material_imports WHERE name = ?").bind(`guideline/${domain}`).first()) {
+    try { return new Uint8Array(await readFile(pathFor(domain))); }
+    catch { /* No legacy file is available. */ }
+  }
+  throw new ApiError(503, "The project guideline is not installed on this server yet.");
 }
 
 export async function guidelineStatus(domain: GuidelineDomain): Promise<GuidelineStatus> {

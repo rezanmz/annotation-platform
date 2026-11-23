@@ -1,68 +1,14 @@
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { hashPassword, validatePassword } from "../lib/server/password.ts";
-import { createHash } from "node:crypto";
+import { installMaterials } from "./materials.ts";
 import { seedDefaultAnnotators } from "./default-annotators.ts";
-
-type Keys = { version: string; answers: { legal: string[]; chemistry: string[] } };
-
-function parsedKeys(): Keys | null {
-  const inline = process.env.QUALIFICATION_KEYS_JSON?.trim();
-  const file = process.env.QUALIFICATION_KEYS_FILE?.trim();
-  let value: unknown = null;
-  try {
-    if (inline) value = JSON.parse(inline);
-    else if (file) value = JSON.parse(readFileSync(resolve(file), "utf8"));
-  } catch {
-    throw new Error("QUALIFICATION_KEYS_JSON / QUALIFICATION_KEYS_FILE is not valid JSON.");
-  }
-  if (!value || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  const version = record.version;
-  const answers = record.answers as Record<string, unknown> | undefined;
-  const valid = (list: unknown): list is string[] => Array.isArray(list) && list.length === 10 && list.every((entry) => typeof entry === "string" && /^[A-D]$/.test(entry));
-  if (typeof version !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$/.test(version) || !answers || !valid(answers.legal) || !valid(answers.chemistry)) {
-    throw new Error("Qualification keys must contain a version and ten A-D answers for legal and chemistry.");
-  }
-  return { version, answers: { legal: answers.legal, chemistry: answers.chemistry } };
-}
 
 const databasePath = resolve(process.env.DATABASE_PATH?.trim() || ".data/app.db");
 mkdirSync(dirname(databasePath), { recursive: true });
 const db = new DatabaseSync(databasePath);
 const messages: string[] = [];
-
-function seedKeys() {
-  const keys = parsedKeys();
-  if (!keys) return;
-  const current = db.prepare("SELECT version FROM answer_keys WHERE domain = ?");
-  const now = new Date().toISOString();
-  for (const domain of ["legal", "chemistry"] as const) {
-    if (current.get(domain)) continue;
-    const answers = JSON.stringify(keys.answers[domain]);
-    db.prepare("INSERT OR IGNORE INTO answer_key_versions (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
-    db.prepare("INSERT INTO answer_keys (domain, version, answers, confirmed_by, confirmed_at) VALUES (?, ?, ?, ?, ?)").run(domain, keys.version, answers, "system:bootstrap", now);
-    messages.push(`Seeded ${domain} qualification key ${keys.version}.`);
-  }
-}
-
-// Move guideline PDFs seeded on the volume into SQLite once, so Litestream
-// and every database snapshot include them.
-function seedGuidelines() {
-  const guidelineDir = process.env.GUIDELINES_DIR?.trim() || "/data/guidelines";
-  const existingGuidelines = new Set((db.prepare("SELECT domain FROM guidelines").all() as { domain: string }[]).map((row) => row.domain));
-  for (const domain of ["legal", "chemistry"] as const) {
-    if (existingGuidelines.has(domain)) continue;
-    const file = join(guidelineDir, `${domain}.pdf`);
-    if (!existsSync(file)) continue;
-    const bytes = readFileSync(file);
-    if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") continue;
-    db.prepare("INSERT INTO guidelines (domain, bytes, sha256, updated_at) VALUES (?, ?, ?, ?)")
-      .run(domain, bytes, createHash("sha256").update(bytes).digest("hex"), new Date().toISOString());
-    messages.push(`Imported ${domain} guideline into the database.`);
-  }
-}
 
 async function seedAdmin() {
   const admin = db.prepare("SELECT id FROM local_accounts WHERE role = 'admin' AND active = 1 LIMIT 1").get();
@@ -88,8 +34,7 @@ try {
   db.exec("PRAGMA busy_timeout = 30000");
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("BEGIN IMMEDIATE");
-  seedKeys();
-  seedGuidelines();
+  installMaterials(db, messages);
   await seedAdmin();
   const file = `${databasePath}.annotators.json`;
   const { created, missingPasswords } = await seedDefaultAnnotators(db, file);

@@ -9,30 +9,27 @@ accounts, explicit project memberships, and SQLite on a persistent volume.
 Node 22.18 or newer is required.
 
 Run `npm ci`, then `npm run dev` and open `http://localhost:5173/login`. Startup applies the
-migrations and creates 17 annotator accounts. To seed the first administrator and qualification keys
-in the same run, set these variables before starting the app. Supply ten A–D answers per domain.
+migrations, creates 17 annotator accounts, and imports the supplied materials from the repository
+root. Place `legal_annotation_guidelines.pdf`, `chemistry_annotation_guidelines.pdf`, and
+`qualification-answer-keys.json` there, or set `ANNOTATION_MATERIALS_DIR` to their directory.
+To create the first administrator, set these variables before starting the app.
 
 ```sh
 export BOOTSTRAP_ADMIN_EMAIL=you@example.test
 export BOOTSTRAP_ADMIN_NAME="Workspace administrator"
 export BOOTSTRAP_ADMIN_PASSWORD='at-least-12-characters'
-export GUIDELINES_DIR="$PWD/guidelines"
-export QUALIFICATION_KEYS_JSON='{"version":"supplied-guidelines-v1","answers":{"legal":["…"],"chemistry":["…"]}}'
 npm run dev
 ```
 
 `DATABASE_PATH` defaults to `.data/app.db`. Anonymous requests to `/`, `/admin`, and
-`/account/password` redirect to `/login`. The optional sample workspace is off unless
-`DEMO_ENABLED=1`; it must use `DEMO_QUALIFICATION_KEYS_JSON`, never the live key. Put the two guideline PDFs at
-`guidelines/legal.pdf` and `guidelines/chemistry.pdf`; that directory is ignored by Git and copied
-into the private image at build time. Open `/login`.
+`/account/password` redirect to `/login`. The optional sample workspace uses `DEMO_ENABLED=1`
+and its own `DEMO_QUALIFICATION_KEYS_JSON`.
 
 ## Production
 
-The public repository intentionally contains no qualification answers and no guideline PDFs. They are
-provided at deploy time through Railway variables and the local `guidelines/` directory, which is
-included in the image but excluded from Git. See `docs/OPERATIONS.md` for the complete contract,
-deploy command, backup and restore procedure, and scaling limits.
+For a private container build, put the same three files inside `annotation-studio/guidelines/`,
+which Docker copies into the runtime image. Alternatively, point `ANNOTATION_MATERIALS_DIR` at
+a mounted directory containing the files. See the [operations guide](docs/OPERATIONS.md).
 
 The container and `npm start` apply migrations and provision accounts before serving requests.
 Build once with `npm run build` before using `npm start`. The container runs under Litestream when
@@ -69,6 +66,10 @@ configured. The health endpoint is `/api/health`.
   erasure revoke sessions.
 
 ## Saving guarantees
+
+For all three corpora, comments are required for scores 1–3 and optional for scores 4–5.
+“Cannot assess” requires a choice of missing material or insufficient expertise, plus an explanation.
+For numerical fidelity, “No relevant numbers or references” records score 4 with “not applicable.”
 
 Submitting saves that document immediately. One immutable row stores all eight ratings, criterion
 comments, and the document comment. A unique constraint allows one submission per annotator/document

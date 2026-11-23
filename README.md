@@ -16,5 +16,7 @@ npm run dev
 
 Open `http://localhost:5173/login`. Startup creates one annotator for each of the 17 corpus-language
 pairs. Their initial email addresses and passwords are in `annotation-studio/.data/app.db.annotators.json`.
-For a custom `DATABASE_PATH`, append `.annotators.json` to that path. See the
-[application README](annotation-studio/README.md) to configure the administrator and qualification keys.
+For a custom `DATABASE_PATH`, append `.annotators.json` to that path.
+Startup imports `legal_annotation_guidelines.pdf`, `chemistry_annotation_guidelines.pdf`, and
+`qualification-answer-keys.json` from this directory. For administrator and deployment setup,
+see the [application README](annotation-studio/README.md).

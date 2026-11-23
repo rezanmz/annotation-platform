@@ -1,2 +1,5 @@
 node_modules/
 *.annotators.json*
+/qualification-answer-keys.json
+/legal_annotation_guidelines.pdf
+/chemistry_annotation_guidelines.pdf

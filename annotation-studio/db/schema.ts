@@ -26,6 +26,9 @@ export const projectLanguages = sqliteTable("project_languages", {
 export const guidelines = sqliteTable("guidelines", {
   domain: text("domain").primaryKey(), bytes: blob("bytes").notNull(), sha256: text("sha256").notNull(), updatedAt: text("updated_at").notNull(),
 });
+export const materialImports = sqliteTable("material_imports", {
+  name: text("name").primaryKey(), sha256: text("sha256").notNull(),
+});
 
 export const auditLog = sqliteTable("audit_log", {
   id: text("id").primaryKey(), actorId: text("actor_id").notNull(), action: text("action").notNull(), target: text("target").notNull(), metadata: text("metadata").notNull(), createdAt: text("created_at").notNull(),
