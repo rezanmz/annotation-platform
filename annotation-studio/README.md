@@ -60,7 +60,8 @@ configured. The health endpoint is `/api/health`.
 - `/admin` → **Projects** creates, edits, and removes projects (only when empty); each project uses
   the legal or chemistry guideline domain.
 - `/admin` → **Guidelines** uploads, replaces, downloads, or removes the legal and chemistry
-  guideline PDFs (stored in SQLite, so backups include them).
+  guideline PDFs. SQLite stores the originals, including the final qualification page. The
+  annotator reader, PDF downloads, and sample workspace show only the preceding guideline pages.
 - `/admin` → **Administrators** creates and manages administrator accounts.
 - Disabled accounts cannot sign in and existing sessions stop working. Password resets and account
   erasure revoke sessions.

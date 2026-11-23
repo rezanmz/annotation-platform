@@ -62,7 +62,7 @@ export default function Onboarding({ project, qualification, mode, demo, questio
     <div className="page-heading compact-heading onboarding-heading">
       <div><div className="eyebrow">{assignmentName(project).toUpperCase()} · {passed ? 'GUIDELINE REFERENCE' : 'GETTING STARTED'}</div>
         <h1>{showGuideline ? 'Read the annotation guideline.' : passed ? 'You’re ready to annotate.' : 'Complete the qualification test.'}</h1>
-        <p>{showGuideline ? passed ? 'Keep the guideline handy while reviewing. Your qualification is already complete.' : 'Read the complete guideline below before continuing to the test.' : passed ? 'All ten answers are correct. This project is now unlocked for you.' : 'Answer all ten questions correctly to unlock this project’s annotation documents.'}</p>
+        <p>{showGuideline ? passed ? 'Keep the guideline handy while reviewing. Your qualification is already complete.' : 'Read the scoring guidelines below. The qualification questions follow in the next step.' : passed ? 'All ten answers are correct. This project is now unlocked for you.' : 'Answer all ten questions correctly to unlock this project’s annotation documents.'}</p>
       </div>
       <a className="button button-secondary" href={pdfUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open guideline PDF</a>
     </div>
@@ -72,7 +72,7 @@ export default function Onboarding({ project, qualification, mode, demo, questio
       <section className="guideline-reader" aria-label={`${chemistry ? 'Chemistry' : 'Legal'} annotation guideline`}>
         <div className="guideline-reader-toolbar"><div><FileText size={17} /><strong>{chemistry ? 'Chemistry' : 'Legal'} annotation guidelines</strong><span>Read every page</span></div><a href={pdfUrl} target="_blank" rel="noreferrer">Open in a new tab <ExternalLink size={13} /></a></div>
         <iframe className="guideline-pdf" src={`${pdfUrl}#view=FitH`} title={`${chemistry ? 'Chemistry' : 'Legal'} annotation guideline PDF`} />
-        <div className="guideline-reader-fallback"><BookOpen size={16} /><p>If the PDF does not appear or is difficult to read, <a href={pdfUrl} target="_blank" rel="noreferrer">open the full guideline in a new tab</a>. Read the full guideline before continuing.</p></div>
+        <div className="guideline-reader-fallback"><BookOpen size={16} /><p>If the PDF does not appear or is difficult to read, <a href={pdfUrl} target="_blank" rel="noreferrer">open the guideline in a new tab</a>.</p></div>
       </section>
       <div className="guideline-reading-reminders"><strong>When recording your review</strong><ul>
         <li>Explain scores 1–3. Comments are optional for 4 and 5.</li>

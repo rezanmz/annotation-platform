@@ -59,7 +59,7 @@ export function GuidelineManager({ domain, actorId }: { domain: string; actorId:
 
   return <section className="admin-card">
     <div className="admin-section-heading">
-      <div><p className="admin-eyebrow">REFERENCE DOCUMENTS</p><h2>{LABELS[domain] ?? domain}</h2><p>Upload or replace the PDF annotators must read before the qualification test. Stored on the persistent volume and included in volume backups.</p></div>
+      <div><p className="admin-eyebrow">REFERENCE DOCUMENTS</p><h2>{LABELS[domain] ?? domain}</h2><p>Upload the complete PDF with the qualification questions on its final page. Annotators receive the preceding pages.</p></div>
       <BookOpen size={25} aria-hidden="true" />
     </div>
     <div className="admin-account-fields">
@@ -68,7 +68,7 @@ export function GuidelineManager({ domain, actorId }: { domain: string; actorId:
         <p>{status ? status.exists ? `${(status.bytes / 1024).toFixed(0)} KB · updated ${new Date(status.updatedAt ?? Date.now()).toLocaleString()}` : "Not installed — annotators cannot open this guideline." : "Checking…"}</p>
       </div>
       <div className="admin-guideline-actions">
-        <a className="admin-button admin-secondary" href={`/api/admin/guidelines/${domain}`} target="_blank" rel="noreferrer" aria-disabled={!status?.exists}><Download size={15} />View PDF</a>
+        <a className="admin-button admin-secondary" href={`/api/admin/guidelines/${domain}`} target="_blank" rel="noreferrer" aria-disabled={!status?.exists}><Download size={15} />View original PDF</a>
         <label className="admin-button admin-secondary" aria-disabled={busy}>
           <Upload size={15} />{busy ? "Working…" : status?.exists ? "Replace PDF" : "Upload PDF"}
           <input type="file" accept="application/pdf" hidden disabled={busy} onChange={(event) => void upload(event.target.files?.[0])} />

@@ -155,8 +155,10 @@ Omit the language parameter for a whole-project export.
   chemistry PDFs. PDFs are stored as rows in SQLite (`guidelines` table), so Litestream, the daily
   encrypted snapshot, and the B2 replica all cover them; the volume is not the only copy. On first
   boot, PDFs already present in `GUIDELINES_DIR` are imported into the database. Removing a guideline
-  makes that domain return a clear 503 until a replacement is uploaded. PDFs are limited to 25 MB and
-  validated by magic bytes.
+  makes that domain return a clear 503 until a replacement is uploaded. Upload a readable PDF of
+  up to 25 MB with at least one instruction page followed by the qualification test on the final
+  page. Administrators can download the original. Annotator previews and downloads include the
+  instruction pages.
 - **Annotators:** `/admin` → **Annotators** creates and assigns accounts, assigns existing accounts,
   resets passwords, disables/reactivates, removes project access, and erases an identity (anonymizes
   the account, revokes sessions, and keeps submitted work).
